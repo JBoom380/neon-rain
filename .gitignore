@@ -1,0 +1,11 @@
+node_modules/
+tests/shots/*.png
+!tests/shots/neon_rain_slice_sheet.png
+__pycache__/
+*.blend1
+art/
+kanetest/
+looktest/
+tests/shots/
+tests/**/*.mp4
+*.glb.bak
