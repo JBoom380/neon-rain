@@ -19,7 +19,7 @@
     for (const c of G.chars) c.remove(); G.chars = []; A.clear(); G.triggers = []; G.interacts = []; G.clues = [];
     core.setScene(L.scene, L.shaft); NR.fx.attach(L); P.setLevel(L);
     P.place(L.spawn.pos, L.spawn.yaw, 0);
-    NR.audio.rainBed(true, L.outdoor ? 0.09 : 0.035);
+    NR.audio.ambience(NR.RAIN[name] || []);
     return L;
   }
   G.load = load;
@@ -117,13 +117,13 @@
 
   // ================================================================ BEAT 1: the office
   async function office() {
-    G.beat = 'office'; const L = load('office'); P.armed = false; P.hideGun = false; P.lives = C.LIVES;
+    G.beat = 'office'; NR.audio.cue('01'); const L = load('office'); P.armed = false; P.hideGun = false; P.lives = C.LIVES;
     P.place(L.spawn.pos, 0.35, 0.05); setState('CUTSCENE'); core.fx.fade = 1;
     await UI.card(S.office.card, 2.4);
-    lookAt(V3(0.85, 1.8, -4.6), 5); core.fadeTo(0, 1.6);
+    lookAt(V3(0.85, 1.8, -4.6), 5); core.fadeTo(0, 1.6); NR.audio.cue('02');
     await UI.lines(S.office.open);
     // the door opens
-    NR.audio.fx.door(); const vela = await A.character('vela', L, V3(-1.0, 0, -6.1), 0); G.chars.push(vela);
+    NR.audio.fx.door(); NR.audio.cue('03'); const vela = await A.character('vela', L, V3(-1.0, 0, -6.1), 0); G.chars.push(vela);
     lookAt(V3(-1.0, 1.5, -4.6), 1.2);
     for (let k = 0; k <= 30; k++) { L.door.rotation.y = 1.15 * (k / 30) * (2 - k / 30); await wait(0.02); }
     const doorIdx = L.boxes.indexOf(L.doorCol); if (doorIdx >= 0) L.boxes.splice(doorIdx, 1);
@@ -151,7 +151,7 @@
     G.beat = 'office_leave';
     vela.walkTo([V3(-1.5, 0, -2.4), V3(-1.0, 0, -4.2), V3(-1.0, 0, -6.2)], 1.1).then(() => { vela.visible = false; });
     await UI.lines(S.office.leave); await waitFor(() => !vela.path);
-    G.lookTarget = null; G.lockMove = false;
+    G.lookTarget = null; G.lockMove = false; NR.audio.cue('02');
     // take the revolver, go
     let took = false;
     interact({ pos: V3(-0.12, 0.8, -0.35), r: 1.5, label: 'TAKE GUN', enabled: () => !took, use: async () => { took = true; L.deskGun.visible = false; P.armed = true; P.rounds = C.GUN_ROUNDS; NR.audio.fx.reload(); setState('CUTSCENE'); await UI.tutorial(S.office.gunTut); setState('PLAY'); objective('Miles is waiting. Go out the door.'); } });
@@ -162,7 +162,7 @@
 
   // ================================================================ BEAT 2: the alley
   async function alley() {
-    G.beat = 'alley'; await UI.card(S.alley.card, 2.4);
+    G.beat = 'alley'; NR.audio.cue('01'); await UI.card(S.alley.card, 2.4);
     const L = load('alley'); P.armed = true; P.lives = C.LIVES; P.reset(); P.place(L.spawn.pos, 0, 0);
     setState('CUTSCENE'); lookAt(V3(0, 1.4, -20), 2); core.fadeTo(0, 1.2);
     A.corpse(L, L.bodyPos, 0.4); NR.fx.pool(L.bodyPos.clone().add(V3(0.1, 0, -0.5)), 'human'); NR.fx.pool(L.bodyPos.clone().add(V3(-0.2, 0, 0.2)), 'human');
@@ -175,9 +175,9 @@
     startFight(spawnFn, { pos: L.spawn.pos, yaw: 0 });
     setState('PLAY'); G.beat = 'alley_play'; objective('Find Miles. The end of the alley.');
     let woke = false;
-    trigger(() => P.pos.z < -6.5, () => { woke = true; for (const e of A.enemies) e.alert(); UI.toast('HARROW (V.O.)', S.alley.fight[0][1], 4); objective('Put them down.'); G.beat = 'alley_fight'; });
+    trigger(() => P.pos.z < -6.5, () => { woke = true; for (const e of A.enemies) e.alert(); NR.audio.cue('07'); UI.toast('HARROW (V.O.)', S.alley.fight[0][1], 4); objective('Put them down.'); G.beat = 'alley_fight'; });
     await waitFor(() => woke && !alive());
-    G.fight = null; UI.toast('HARROW (V.O.)', S.alley.clear[0][1], 4); objective('Check on Miles.'); G.beat = 'alley_clear';
+    G.fight = null; NR.audio.cue('02'); UI.toast('HARROW (V.O.)', S.alley.clear[0][1], 4); objective('Check on Miles.'); G.beat = 'alley_clear';
     let checked = false;
     interact({ pos: L.bodyPos, r: 2.7, label: 'MILES', use: () => { checked = true; } });
     await waitFor(() => checked);
@@ -188,7 +188,7 @@
 
   // ================================================================ BEAT 3: the Blue Orchid
   async function club() {
-    G.beat = 'club'; await UI.card(S.club.card, 2.4);
+    G.beat = 'club'; NR.audio.cue('01'); await UI.card(S.club.card, 2.4);
     const L = load('club'); P.lives = C.LIVES; P.reset(); P.place(L.spawn.pos, 0, 0);
     const dol = new A.Painted('dolores', L, L.doloresPos, Math.atan2(-5.6, 12)); G.chars.push(dol);
     const fightOnly = new URLSearchParams(location.search).get('beat') === 'clubfight'; // dev: straight to the club gunfight
@@ -209,7 +209,9 @@
     // cigarettes on the bar
     let tookPack = false; const pack = cm(new T.BoxGeometry(0.06, 0.02, 0.09), 0xe8e2d4); pack.position.set(-5.2, 1.18, -7.5); L.scene.add(pack);
     interact({ pos: V3(-5.0, 1.1, -7.5), r: 1.7, label: 'TAKE SMOKES', enabled: () => !tookPack, use: () => { tookPack = true; pack.visible = false; P.pack = Math.min(C.PACK_MAX, P.pack + 2); UI.toast('+2 SMOKES', 'Somebody left them on the bar. Somebody always does.', 2.5); } });
-    setState('PLAY'); G.beat = 'club_scan';
+    setState('PLAY'); G.beat = 'club_scan'; NR.audio.cue('04');
+    // Dolores's song plays from the stage: 05 near the stage, the house band (04) elsewhere
+    G.musicZone = () => { const d = Math.hypot(P.pos.x + 1.5, P.pos.z + 19.5); const near = NR.audio.cueId === '05' ? d < 8.5 : d < 7; NR.audio.cue(near ? '05' : '04'); };
     objective(() => foundCount() < 3 ? 'SCAN the club for clues (' + foundCount() + '/3)' : 'Talk to Dolores, by the dressing room.');
     let talked = false;
     interact({ pos: L.doloresPos, r: 2.2, label: 'TALK', enabled: () => !talked, use: async () => {
@@ -217,18 +219,19 @@
       talked = true;
     } });
     await waitFor(() => talked);
-    G.beat = 'club_meet'; setState('CUTSCENE'); G.lookTarget = () => V3(dol.pos.x, 1.6, dol.pos.z); dol.faceTo(P.pos);
+    G.beat = 'club_meet'; G.musicZone = null; setState('CUTSCENE'); G.lookTarget = () => V3(dol.pos.x, 1.6, dol.pos.z); dol.faceTo(P.pos);
     await UI.lines(S.club.meet); await UI.tutorial(S.club.interroTut);
-    G.beat = 'interrogation'; setState('INTERRO'); NR.audio.duck(0.45);
+    G.beat = 'interrogation'; setState('INTERRO'); NR.audio.cue('06');
     const found = {}; for (const k in G.caseData.clues) found[k] = true;
     res = await UI.interrogate('dolores', S.dolores, found);
-    NR.audio.duck(1);
+
     G.caseData.verdicts.dolores = res.verdict; if (res.offered) note(S.dolores.offer.note); save();
     UI.toast('CASE FILE', 'Verdict on Dolores Delacroix: ' + res.verdict, 3);
     G.beat = 'verdict'; setState('CUTSCENE');
     await UI.lines(S.club.afterVerdict[res.verdict]); await UI.lines(S.club.warn);
     dol.walkTo([V3(6.4, 0, -17.6), V3(7.0, 0, -22.4)], 1.4).then(() => { dol.visible = false; });
     } else { dol.visible = false; P.place(V3(5.6, 0, -14.4), 0.9, 0); core.fadeTo(0, 0.4); }
+    G.musicZone = null;
     // Gale's men come in through the front and the kitchen
     const spawnFn = () => [
       A.spawn(L, { type: 'gunman', pos: V3(-0.4, 0, 0.6), dormant: true, entry: [V3(-0.6, 0, -1.8)], drops: 0.5 }),
@@ -237,7 +240,7 @@
       A.spawn(L, { type: 'gunman', kind: 'artificial', pos: V3(-7.7, 0, -16.0), dormant: true, entry: [V3(-6.4, 0, -16.0)], hp: 140, drops: 1 }),
       A.spawn(L, { type: 'gunman', pos: V3(-7.7, 0, -15.6), dormant: true, entry: [V3(-6.6, 0, -14.8)], drops: 0.5 }),
     ];
-    NR.audio.fx.thump(); core.shake(0.02, 0.3);
+    NR.audio.fx.thump(); core.shake(0.02, 0.3); G.musicZone = null; NR.audio.cue('07', 0.8);
     const fight = startFight(spawnFn, { pos: V3(5.6, 0, -14.4), yaw: 0.9 });
     for (const e of fight.enemies) e.alert();
     G.lookTarget = null; setState('PLAY'); G.beat = 'club_fight'; objective('Gale\'s men. Stay alive.');
@@ -249,8 +252,8 @@
 
   async function run() {
     await UI.gate();
-    NR.audio.playMusic(NR.MUSIC.title);
-    G.beat = 'title'; await UI.title();
+    NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club);
+    G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null);
     G.t0 = performance.now(); G.titleCam = false;
     await core.fadeTo(1, 0.6);
     const skip = new URLSearchParams(location.search).get('beat'); // dev: ?beat=alley or ?beat=club
@@ -260,7 +263,7 @@
     await club();
     G.beat = 'end';
     const secs = Math.round((performance.now() - G.t0) / 1000);
-    setState('END'); core.fadeTo(0.55, 0.8);
+    setState('END'); core.fadeTo(0.55, 0.8); NR.audio.cue('09', 1.5, { loop: false });
     UI.endCard({ clues: foundCount(), thinks: Object.values(G.caseData.clues).filter(c => c.think).length, verdict: G.caseData.verdicts.dolores, acc: P.shots ? Math.round(P.hits / P.shots * 100) : 0, heads: P.heads, pack: P.pack, time: Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') });
   }
 
@@ -273,7 +276,7 @@
     if (inp.caseFile) { if (st === 'PLAY' || st === 'PAUSE') G.openCase(); else if (st === 'CASE') G.closeCase(); }
     for (let i = G.waits.length - 1; i >= 0; i--) { let ok = false; try { ok = G.waits[i].cond(); } catch (e) { console.error(e); } if (ok) { const w = G.waits[i]; G.waits.splice(i, 1); w.r(); } }
     const frozen = st === 'PAUSE' || st === 'CASE' || st === 'INTERRO' || st === 'END';
-    if (G.titleCam) { const cam = core.camera, t = core.time; cam.position.set(-0.35 + Math.sin(t * 0.1) * 0.12, 1.35, 1.1); cam.rotation.set(0.06 + Math.sin(t * 0.13) * 0.015, -0.12 + Math.sin(t * 0.08) * 0.06, 0); P.controlled = true; }
+    if (G.titleCam) { const cam = core.camera, t = core.time; cam.position.set(0.6 + Math.sin(t * 0.07) * 0.7, 1.7 + Math.sin(t * 0.11) * 0.06, -9.5 - Math.sin(t * 0.05) * 1.0); cam.rotation.set(0.1 + Math.sin(t * 0.13) * 0.01, 0.2 + Math.sin(t * 0.06) * 0.04, 0); P.controlled = true; }
     else P.controlled = false;
     if (!frozen) {
       if (G.lookTarget && st !== 'PLAY') { const p = typeof G.lookTarget === 'function' ? G.lookTarget() : G.lookTarget; const [y, pt] = yawPitchTo(p); let dy = y - P.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const k = Math.min(1, rdt * (G.lookRate || 4)); P.yaw += dy * k; P.pitch += (pt - P.pitch) * k; }
@@ -286,6 +289,7 @@
       else for (const e of A.enemies) if (e.dead) e.update(dt, P);
       NR.fx.update(dt, rdt);
       if (st === 'PLAY') {
+        if (G.musicZone && core.frame % 15 === 0) G.musicZone();
         updateScan(rdt);
         const it = updateInteract(); if (it && inp.interact) it.use();
         for (let i = G.triggers.length - 1; i >= 0; i--) if (G.triggers[i].test(P)) { const tr = G.triggers[i]; G.triggers.splice(i, 1); tr.fn(); }
@@ -297,7 +301,7 @@
   // ---------------------------------------------------------------- boot
   function boot() {
     UI.init(core); NR.controls.init(core); NR.audio.init();
-    load('office'); G.titleCam = true; setState('TITLE');
+    load('club'); G.titleCam = true; setState('TITLE'); // landing menu: the Blue Orchid stage, empty mic in the spotlight
     for (const who of ['vela', 'dolores']) A.preload(who);
     if (core.settings.chars === '3d') A.loadGLB(NR.ASSET + A.MODELS.vela).catch(() => {});
     core.startLoop();

@@ -57,10 +57,11 @@
 #nru .btn.red{border-color:#b8241c;color:#ffd8cc;box-shadow:0 0 12px rgba(184,36,28,.5)}
 #nru .btn:active{background:rgba(234,223,202,.2)}
 #nru .title{background:radial-gradient(ellipse at 50% 35%,rgba(0,0,0,.05),rgba(0,0,0,.75) 80%)}
-#nru .logo{font-family:Georgia,serif;font-weight:bold;font-size:58px;letter-spacing:.08em;line-height:1;color:#fff4ea;text-shadow:0 0 6px #ff4a3a,0 0 22px #d8261a,0 0 44px #b8241c;margin-top:-20vh}
+#nru .logo{font-family:Georgia,serif;font-weight:bold;font-size:58px;letter-spacing:.08em;line-height:1;color:#fff4ea;text-shadow:0 0 6px #ff4a3a,0 0 22px #d8261a,0 0 44px #b8241c;margin-top:-50vh}
 #nru .logo small{display:block;font-size:13px;letter-spacing:.42em;color:#eadfca;text-shadow:0 1px 3px #000;margin-top:18px;font-weight:normal}
 #nru .logo em{display:block;font-style:italic;font-size:22px;letter-spacing:.06em;color:#eadfca;text-shadow:0 1px 4px #000;margin-top:8px;font-weight:normal}
-#nru .menu{position:absolute;left:0;right:0;bottom:12%}
+#nru .menu{position:absolute;left:0;right:0;bottom:9%}
+#nru .menu .btn{width:66%;margin:8px auto;background:rgba(6,5,4,.55)}
 #nru .foot{position:absolute;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom,0px));font-size:10px;letter-spacing:.2em;color:#8a8070;font-family:"Courier New",monospace}
 #nru .set{width:86%;max-width:360px;text-align:left}
 #nru .set .row{display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid rgba(234,223,202,.2);font-family:"Courier New",monospace;font-weight:bold;letter-spacing:.12em;font-size:13px}
@@ -108,7 +109,52 @@
 #nru .cf .close{margin-top:14px;position:sticky;bottom:6px;background:#1b1712;flex-shrink:0}
 #nru .ec .stats{font-family:"Courier New",monospace;font-size:13px;letter-spacing:.12em;line-height:1.9;margin:22px 0;text-align:left;display:inline-block}
 #nru .ec .stats b{color:#e8b040}
-@keyframes nrblink{50%{opacity:.25}}`;
+@keyframes nrblink{50%{opacity:.25}}
+#nru .title.jbopen .menu{display:none}
+#nru .jb{position:absolute;left:17%;right:17%;bottom:7%;display:none;pointer-events:auto;z-index:25;font-family:"Courier New",monospace;color:#eadfca;max-height:60%;overflow-y:auto;touch-action:pan-y;scrollbar-width:none}
+#nru .jb::-webkit-scrollbar{display:none}
+#nru .jb.on{display:block}
+#nru .jb .row{position:relative;margin:5px 0;padding:8px 10px;border:1px solid rgba(234,223,202,.55);background:rgba(6,5,4,.6);font-weight:bold;font-size:11px;letter-spacing:.14em;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nru .jb .row.tr{text-align:left;padding-left:22px;margin:4px 0;font-size:10.5px}
+#nru .jb .row .mk{position:absolute;left:8px;color:#d8261a;visibility:hidden}
+#nru .jb .row.cur{border-color:#b8241c;color:#fff;box-shadow:0 0 10px rgba(184,36,28,.45)}
+#nru .jb .row.cur .mk{visibility:visible}
+#nru .jb .row .pl{position:absolute;left:0;bottom:0;height:1px;width:0;background:#d8261a}
+#nru .jb .row.back{margin-top:10px;font-size:12px;letter-spacing:.2em}
+#nru .jb .ctl{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 16px;margin:8px 0 2px;font-weight:bold;font-size:12px;letter-spacing:.12em;text-shadow:0 1px 3px #000}
+#nru .jb .ctl span{padding:7px 6px;color:#eadfca;font-size:15px;text-shadow:0 0 4px #000,0 1px 3px #000}
+#nru .jb .ctl .pp{color:#ff5a48;font-size:14px}
+#nru .jb .ctl .tg{font-size:10px !important;letter-spacing:.16em;color:#a89c88}
+#nru .jb .ctl .br{flex-basis:100%;height:0;padding:0}
+#nru .jb .ctl .tg.on{color:#e8b040}
+#nru .jb .sc{display:flex;align-items:center;gap:6px;font-size:9.5px;color:#a89c88;text-shadow:0 1px 2px #000}
+#nru .jb .sc input{flex:1;height:22px;touch-action:pan-x;margin:0;-webkit-appearance:none;appearance:none;background:transparent}
+#nru .jb .sc input::-webkit-slider-runnable-track{height:1px;background:rgba(234,223,202,.45)}
+#nru .jb .sc input::-moz-range-track{height:1px;background:rgba(234,223,202,.45)}
+#nru .jb .sc input::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;border-radius:50%;background:#d8261a;margin-top:-4px;box-shadow:0 0 6px rgba(216,38,26,.8)}
+#nru .jb .sc input::-moz-range-thumb{width:9px;height:9px;border:none;border-radius:50%;background:#d8261a}
+#nru .jb.vb{background:linear-gradient(rgba(4,3,2,.0),rgba(4,3,2,.72) 8%,rgba(4,3,2,.72) 92%,rgba(4,3,2,0));padding:10px 4px}
+#nru .jb .ln-h{text-align:center;font-size:9.5px;letter-spacing:.3em;color:#e8b040;margin:4px 0 8px}
+#nru .jb .ln{display:flex;align-items:baseline;gap:6px;padding:5px 2px;font-size:10.5px;letter-spacing:.08em;color:#d8ceb8}
+#nru .jb .ln .n{color:#8a8070}
+#nru .jb .ln .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70%}
+#nru .jb .ln .dots{flex:1;border-bottom:1px dotted rgba(234,223,202,.45);transform:translateY(-3px);min-width:12px}
+#nru .jb .ln .len{color:#a89c88}
+#nru .jb .ln.cur{color:#fff}
+#nru .jb .ln.cur .n{color:#d8261a}
+#nru .jb .ln.cur .n::before{content:"\\25B8 ";color:#d8261a}
+#nru .jb .np{margin:10px 0 4px;font-size:10px;letter-spacing:.14em;color:#eadfca;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nru .jb .np b{color:#d8261a}
+#nru .jb .dial{display:flex;align-items:stretch;border:1px solid #b8241c;background:rgba(6,5,4,.62);box-shadow:0 0 12px rgba(184,36,28,.45);touch-action:pan-y}
+#nru .jb .dial .ar{display:flex;align-items:center;padding:0 14px;font-size:22px;color:#ff5a48}
+#nru .jb .dial .dm{flex:1;text-align:center;padding:9px 2px 8px;min-width:0}
+#nru .jb .dial .lab{display:block;font-size:8.5px;letter-spacing:.3em;color:#e8b040}
+#nru .jb .dial .dt{display:block;margin:4px 0 7px;font-family:Georgia,serif;font-size:14px;letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nru .jb .dial .hl{height:1px;background:rgba(234,223,202,.2);margin:0 6px}
+#nru .jb .dial .hl i{display:block;height:1px;width:0;background:#d8261a}
+#nru .jb .ctl .lt{color:#e8b040 !important}
+#nru .jb .dl{display:none;margin:4px 0 6px;padding:4px 8px;background:rgba(4,3,2,.7)}
+#nru .jb .dl.on{display:block}`;
 
   const h = (tag, cls, html, parent) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; (parent || root).appendChild(e); return e; };
   const tapOnce = (el) => new Promise(r => { const f = (ev) => { ev.preventDefault(); ev.stopPropagation(); el.removeEventListener('pointerup', f); r(); }; el.addEventListener('pointerup', f); });
@@ -139,7 +185,9 @@
     // screens
     E.title = h('div', 'scr title', '<div class="logo">NEON RAIN<em>The Glass Saint</em><small>CASE 01</small></div><div class="menu"></div><div class="foot">GREY-BOX SLICE</div>');
     const menu = E.title.querySelector('.menu');
-    E.begin = h('div', 'btn red', 'BEGIN CASE', menu); E.setBtn = h('div', 'btn', 'SETTINGS', menu);
+    E.begin = h('div', 'btn red', 'BEGIN CASE', menu); E.jbBtn = h('div', 'btn', 'JUKEBOX', menu); E.setBtn = h('div', 'btn', 'SETTINGS', menu);
+    onTap(E.jbBtn, () => NR.jukebox.open());
+    E.jb = h('div', 'jb', '', E.title);
     onTap(E.setBtn, () => settingsOpen(true));
     E.set = h('div', 'scr', '<div class="set"><h2>SETTINGS</h2><div class="rows"></div></div>'); E.set.style.zIndex = 30;
     E.pause = h('div', 'scr', '<h2 style="font-family:Courier New,monospace;letter-spacing:.3em;color:#e8b040">PAUSED</h2>');
@@ -166,6 +214,7 @@
     row('SOUND', Math.round(s.sfx * 10), () => { s.sfx = Math.max(0, +(s.sfx - 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); }, () => { s.sfx = Math.min(1, +(s.sfx + 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); });
     row('LOOK SPEED', (s.sens || 1).toFixed(1), () => { s.sens = Math.max(0.4, +((s.sens || 1) - 0.1).toFixed(1)); core.saveSettings(); }, () => { s.sens = Math.min(2.5, +((s.sens || 1) + 0.1).toFixed(1)); core.saveSettings(); });
     row('CHARACTERS', s.chars === '3d' ? '3D' : 'PAINTED', null, () => { s.chars = s.chars === '3d' ? 'painted' : '3d'; core.saveSettings(); });
+    row('JUKEBOX: SHOW ALL', s.jbAll === false ? 'OFF' : 'ON', null, () => { s.jbAll = s.jbAll === false; core.saveSettings(); if (NR.jukebox.isOpen) NR.jukebox.render(); });
     row('QUALITY', s.quality.toUpperCase(), null, () => { core.setQuality(s.quality === 'high' ? 'low' : 'high'); });
     if (!E.set.querySelector('.done')) { const d = h('div', 'btn done', 'DONE', E.set.querySelector('.set')); d.style.marginTop = '18px'; onTap(d, () => settingsOpen(false)); }
     E.set.classList.add('on');
@@ -194,7 +243,7 @@
     return new Promise(async (res) => {
       const vo = /V\.O\./.test(who);
       E.dlg.classList.toggle('vo', vo); E.who.textContent = who; E.who.className = 'who' + (who === 'VELA' ? ' vela' : '');
-      E.dlg.classList.add('on'); E.txt.textContent = ''; E.more.style.visibility = 'hidden';
+      E.dlg.classList.add('on'); E.txt.textContent = ''; E.more.style.visibility = 'hidden'; clearTimeout(UI.undT); NR.audio.duck(0.5); // duck the score under VO
       let i = 0, done = false; const speed = UI.fast ? 4000 : 42;
       await new Promise(r2 => {
         let acc = 0, last = performance.now();
@@ -205,7 +254,7 @@
       });
       typing = null; E.more.style.visibility = 'visible';
       await advance(E.dlg);
-      E.dlg.classList.remove('on'); res();
+      E.dlg.classList.remove('on'); UI.undT = setTimeout(() => NR.audio.duck(1), 700); res();
     });
   }
   function advance(el) { return new Promise(r => { let done = false; const fin = () => { if (done) return; done = true; el.removeEventListener('pointerup', f); removeEventListener('keydown', k, true); setTimeout(r, 30); };
@@ -355,4 +404,70 @@
   function show(name, on) { const m = { pause: E.pause, title: E.title }; if (m[name]) m[name].classList.toggle('on', on); }
 
   const UI = NR.ui = { init(c) { core = c; build(); }, gate, title, say, lines, card, tutorial, letterbox, toast, objective, prompt, update, caseFile, interrogate, gameOver, endCard, show, settingsOpen, fast: false, get el() { return E; } };
+})();
+
+// NEON RAIN jukebox (landing menu), in the menu's own style. Three switchable designs: ?jb=a (inline list),
+// ?jb=b (liner notes), ?jb=c (radio dial, default per John 10/7/26). Play/pause, prev/next, scrub, shuffle, repeat; keeps playing after BACK;
+// lock-screen controls through the Media Session set in audio.js. Tracks come from assets/music/tracks.json.
+(function () {
+  const A = () => NR.audio;
+  const V = (new URLSearchParams(location.search).get('jb') || 'c').toLowerCase().replace(/[^abc]/g, '') || 'c';
+  let el = null, list = [], idx = -1, shuffle = false, repeat = 'all', open = false, raf = 0, dialList = false;
+  const fmt = s => isFinite(s) ? Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0') : '0:00';
+  const up = s => s.toUpperCase();
+  function visible() {
+    const all = NR.core.settings.jbAll !== false; let heard = [];
+    try { heard = JSON.parse(localStorage.getItem('neonRainFps.heard') || '[]'); } catch (e) {}
+    return A().tracks.tracks.filter(t => all || heard.includes(t.id) || t.unlock === 'title');
+  }
+  const toggles = () => '<i class="br"></i><span data-act="shuf" class="tg">SHUFFLE</span><span data-act="rep" class="tg">REPEAT ALL</span>';
+  const scrub = () => '<div class="sc"><span class="ta">0:00</span><input type="range" min="0" max="1000" value="0" data-tap="1"><span class="tb">0:00</span></div>';
+  function html() {
+    if (V === 'b') return '<div class="ln-h">ORIGINAL SCORE &middot; SIDE A</div>' +
+      list.map((t, i) => '<div class="ln" data-i="' + i + '"><span class="n">' + t.id + '</span><span class="tt">' + up(t.title) + '</span><span class="dots"></span><span class="len">' + (t.len || '') + '</span></div>').join('') +
+      '<div class="np"></div>' + scrub() + '<div class="ctl"><span data-act="prev">&#x25C2;&#x25C2;</span><span data-act="play" class="pp">&#x25B6;</span><span data-act="next">&#x25B8;&#x25B8;</span>' + toggles() + '</div><div class="row back" data-act="back">BACK</div>';
+    if (V === 'c') return '<div class="dial"><span class="ar" data-act="prev">&#x25C2;</span><div class="dm"><small class="lab">NOW PLAYING</small><b class="dt"></b><div class="hl"><i></i></div></div><span class="ar" data-act="next">&#x25B8;</span></div>' +
+      '<div class="ctl"><span data-act="play" class="pp">&#x25B6;</span>' + toggles() + '<span data-act="list" class="tg lt">TRACK LIST &#x25BE;</span></div>' +
+      '<div class="dl">' + list.map((t, i) => '<div class="ln" data-i="' + i + '"><span class="n">' + t.id + '</span><span class="tt">' + up(t.title) + '</span><span class="dots"></span><span class="len">' + (t.len || '') + '</span></div>').join('') + '</div>' +
+      scrub() + '<div class="row back" data-act="back">BACK</div>';
+    return list.map((t, i) => '<div class="row tr" data-i="' + i + '"><span class="mk">&#x25B8;</span>' + up(t.title) + '<i class="pl"></i></div>').join('') +
+      '<div class="ctl"><span data-act="prev">&#x25C2;&#x25C2;</span><span data-act="play" class="pp">&#x25B6;</span><span data-act="next">&#x25B8;&#x25B8;</span>' + toggles() + '</div>' + scrub() + '<div class="row back" data-act="back">BACK</div>';
+  }
+  function tap(e, fn) { e.classList.add('tap'); e.setAttribute('data-tap', '1'); e.addEventListener('pointerup', ev => { ev.preventDefault(); ev.stopPropagation(); fn(); }); }
+  function render() {
+    el = NR.ui.el.jb; list = visible(); el.className = 'jb on v' + V; el.innerHTML = html();
+    el.querySelectorAll('[data-i]').forEach(r => tap(r, () => play(+r.dataset.i)));
+    const acts = { play: toggle, prev, next, back: close, shuf: () => { shuffle = !shuffle; sync(); }, list: () => { dialList = !dialList; sync(); },
+      rep: () => { repeat = repeat === 'all' ? 'one' : repeat === 'one' ? 'off' : 'all'; const c = A().current(); if (c) c.loop = repeat === 'one'; sync(); } };
+    el.querySelectorAll('[data-act]').forEach(b => tap(b, acts[b.dataset.act]));
+    const rg = el.querySelector('input'); rg.addEventListener('input', () => { const c = A().current(); if (c && isFinite(c.duration)) c.currentTime = rg.value / 1000 * c.duration; });
+    if (V === 'c') { const box = el.querySelector('.dial'); let x0 = null; box.addEventListener('pointerdown', e => { x0 = e.clientX; }); box.addEventListener('pointerup', e => { if (x0 != null && Math.abs(e.clientX - x0) > 40) (e.clientX < x0 ? next : prev)(); x0 = null; }); }
+    idx = list.findIndex(t => t.id === A().cueId); sync();
+  }
+  function sync() {
+    if (!el) return; const c = A().current(), playing = !!(c && !c.paused), t = list[idx];
+    el.querySelectorAll('.pp').forEach(p => { p.innerHTML = playing ? '&#x275A;&#x275A;' : '&#x25B6;'; });
+    el.querySelectorAll('[data-i]').forEach(r => { r.classList.toggle('cur', +r.dataset.i === idx); r.classList.toggle('play', +r.dataset.i === idx && playing); });
+    const sh = el.querySelector('[data-act="shuf"]'); sh.classList.toggle('on', shuffle);
+    const rp = el.querySelector('[data-act="rep"]'); rp.textContent = 'REPEAT ' + up(repeat); rp.classList.toggle('on', repeat !== 'off');
+    const np = el.querySelector('.np'); if (np) np.innerHTML = t ? '<b>' + (playing ? '&#x25B8;' : '&#x275A;&#x275A;') + '</b> ' + up(t.title) : 'TAP A TITLE TO PLAY';
+    const dt = el.querySelector('.dt'); if (dt) { dt.textContent = t ? up(t.title) : 'THE BLUE ORCHID'; el.querySelector('.lab').textContent = playing ? 'NOW PLAYING' : 'PAUSED'; }
+    const dl = el.querySelector('.dl'); if (dl) { dl.classList.toggle('on', dialList); el.querySelector('.lt').innerHTML = 'TRACK LIST ' + (dialList ? '&#x25B4;' : '&#x25BE;'); }
+  }
+  function tick() {
+    raf = requestAnimationFrame(tick); if (!open || !el) return; const c = A().current(); if (!c) return; const f = isFinite(c.duration) && c.duration ? c.currentTime / c.duration : 0;
+    const rg = el.querySelector('input'); if (rg && document.activeElement !== rg) rg.value = f * 1000;
+    const ta = el.querySelector('.ta'), tb = el.querySelector('.tb'); if (ta) { ta.textContent = fmt(c.currentTime); tb.textContent = fmt(c.duration); }
+    const pl = el.querySelector('.row.cur .pl'); if (pl) pl.style.width = (f * 100).toFixed(1) + '%';
+    const hl = el.querySelector('.hl i'); if (hl) hl.style.width = (f * 100).toFixed(1) + '%';
+  }
+  function play(i) { if (!list[i]) return; idx = i; NR.audio.unlock(); A().cue(list[i].id, 1.5, { loop: repeat === 'one', restart: true }).then(sync); A().setOnEnded(onEnd); setTimeout(sync, 80); }
+  function onEnd() { if (repeat === 'off' && !shuffle && idx >= list.length - 1) { sync(); return; } next(); }
+  function next() { if (!list.length) return; play(shuffle ? pickRandom() : (idx + 1) % list.length); }
+  function prev() { const c = A().current(); if (c && c.currentTime > 3) { c.currentTime = 0; return; } play((Math.max(0, idx) - 1 + list.length) % list.length); }
+  function pickRandom() { if (list.length < 2) return 0; let j; do { j = Math.floor(Math.random() * list.length); } while (j === idx); return j; }
+  function toggle() { const c = A().current(); if (!c || idx < 0) { play(Math.max(0, idx)); return; } if (c.paused) c.play().catch(() => {}); else c.pause(); setTimeout(sync, 40); }
+  function close() { open = false; NR.ui.el.jb.classList.remove('on'); NR.ui.el.title.classList.remove('jbopen'); }
+  async function openPanel() { await A().loadTracks(); open = true; NR.ui.el.title.classList.add('jbopen'); render(); if (!raf) tick(); A().setOnEnded(onEnd); }
+  NR.jukebox = { open: openPanel, close, play, next, prev, toggle, render, variant: V, get isOpen() { return open; }, get index() { return idx; }, get list() { return list; }, get shuffle() { return shuffle; }, get repeat() { return repeat; } };
 })();

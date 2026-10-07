@@ -62,6 +62,7 @@ PILOT_JS = """() => {
 
 def main():
     shots, errs, fps, notes = [], [], {}, []
+    global CUES; CUES = {}
     with sync_playwright() as p:
         b = p.chromium.launch(args=["--use-angle=d3d11", "--enable-gpu", "--autoplay-policy=no-user-gesture-required"])
         pg = b.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2, has_touch=True, is_mobile=True)
@@ -74,7 +75,7 @@ def main():
         ev = pg.evaluate
         def wait(ms): pg.wait_for_timeout(ms)
         def shot(key, label):
-            f = f"slice_{len(shots) + 1:02d}_{key}.png"; pg.screenshot(path=str(OUT / f)); shots.append((label, f)); print("shot", f, "|", ev("NR.game.beat"))
+            f = f"slice_{len(shots) + 1:02d}_{key}.png"; pg.screenshot(path=str(OUT / f)); cue = ev("NR.audio.cueId"); shots.append((label, f)); CUES[f] = cue; print("shot", f, "|", ev("NR.game.beat"), "| cue", cue)
         def center(sel):
             r = ev(f"(() => {{ const e = document.querySelector('{sel}'); if (!e) return null; const b = e.getBoundingClientRect(); return b.width ? [b.x + b.width/2, b.y + b.height/2] : null; }})()")
             return r
@@ -125,6 +126,12 @@ def main():
         tap_sel("#nru .title .btn.red")
         ev(PILOT_JS)
         # ---- office prologue
+        def ramp_hook():
+            if "ramp" not in seen and ev("NR.audio.cueId") == "03":
+                seen.add("ramp"); r = []
+                for k in range(8): r.append(ev("NR.audio.deckGains")); wait(220)
+                notes.append("crossfade 02->03 deck gains every 0.22 s: " + json.dumps(r))
+        HOOKS.append(ramp_hook)
         hooks = [snap_once("card", "Intertitle card", "document.querySelector('#nru > .card.vis') !== null", 400),
                  snap_once("office", "Office: rain, blinds, VO", "NR.game.beat === 'office' && document.querySelector('#nru .dlg.on') !== null && NR.core.fx.fade < 0.05", 900),
                  snap_once("velawalk", "Vela walks in (paced two-pose walk)", "NR.game.chars[0] && NR.game.chars[0].walking && NR.game.chars[0].pos.z > -3.2", 0),
@@ -187,6 +194,8 @@ def main():
             face(None)
         go([(2.6, -6.0), (4.6, -11.0)], timeout=30)
         scan_clue("holder", (5.35, -13.4), {"x": 6.6, "y": 0.82, "z": -13.4}, "SCAN + THINK: lipstick on a holder tip")
+        go([(2.4, -14.7), (0.6, -14.7)], face={"x": -1.5, "y": 1.6, "z": -19.5}, timeout=30); until("NR.audio.cueId === '05'", 8, adv=False); wait(1600); shot("stage", "By the stage: Dolores's song")
+        go([(2.4, -14.7), (4.1, -14.4)], timeout=30)
         go([(4.1, -14.4), (4.1, -16.1), (5.4, -16.1)], timeout=30)
         scan_clue("ticket", (6.25, -18.3), {"x": 7.3, "y": 0.81, "z": -18.4}, None)
         scan_clue("mirror", (6.25, -19.8), {"x": 7.45, "y": 0.81, "z": -19.95}, "SCAN: milky smear on the mirror shard")
@@ -224,7 +233,7 @@ def main():
     return shots, errs, fps, notes
 
 
-def women(shots, keys, name, title):
+def women(shots, keys, name, title, cues=False):
     pick = [(l, f) for k in keys for (l, f) in shots if f.split("_", 2)[2][:-4] == k]
     th_w, th_h, cols = 390, 844, 3
     rows = (len(pick) + cols - 1) // cols
@@ -234,7 +243,7 @@ def women(shots, keys, name, title):
     d.text((12, 14), title, fill=(234, 223, 202), font=fb)
     for i, (label, fn) in enumerate(pick):
         x = 12 + (i % cols) * (th_w + 12); y = 50 + (i // cols) * (th_h + 44)
-        img.paste(Image.open(OUT / fn).convert("RGB").resize((th_w, th_h), Image.LANCZOS), (x, y)); d.text((x, y + th_h + 8), label, fill=(232, 176, 64), font=f)
+        img.paste(Image.open(OUT / fn).convert("RGB").resize((th_w, th_h), Image.LANCZOS), (x, y)); d.text((x, y + th_h + 8), (label + "  [cue " + str(CUES.get(fn)) + "]") if cues else label, fill=(232, 176, 64), font=f)
     p = OUT / name; img.save(p); return p
 
 
@@ -261,4 +270,5 @@ print("FPS", json.dumps(fps))
 for n in notes: print("NOTE", n)
 print("ERRORS", len(errs)); [print("  ", e[:300]) for e in errs]
 print("sheet", sheet(shots))
+print("music", women(shots, ["title", "card", "revolver", "velawalk", "alleyfight", "club", "stage", "interro", "clubfight", "end"], "music_cues.png", "NEON RAIN: one scene per music cue (cue number in each label)", cues=True))
 print("women", women(shots, ["velawalk", "vela", "light", "dolores", "interro", "offer"], "women_in_game.png", "NEON RAIN: the women in game (default B&W with red kept)"))

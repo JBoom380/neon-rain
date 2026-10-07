@@ -81002,7 +81002,7 @@ NR.cfg = {
   SETTINGS_KEY: 'neonRainFps.settings', CASE_KEY: 'neonRainFps.case',
 };
 NR.ASSET = document.querySelector('script[src="config.js"]') ? '../assets/' : 'assets/'; // dev.html lives in src/
-NR.MUSIC = { title: NR.ASSET + 'music/rainy_sax.mp3' }; // placeholder until John's Suno tracks arrive
+NR.RAIN = { office: [['rain_05_int_window_close', 1.0]], alley: [['rain_13_ext_alley_gutter', 0.9], ['rain_10_ext_heavy_downpour', 0.6]], club: [['rain_09_int_heavy_rain_through_walls', 1.0]] }; // ambience per scene
 NR.SPRITE = (who, name) => NR.ASSET + 'sprites/' + who + '_' + name + '.webp';
 NR.CLOSE = (who, mood) => NR.ASSET + 'sprites/' + who + '_close_' + mood + '.jpg';
 NR.rng = (seed) => { let s = (seed >>> 0) || 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
@@ -82527,9 +82527,10 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 </script>
 <script>/* audio.js */
-// NEON RAIN audio: placeholder music (SkyRunner's RAINY SAX) + synthesized sfx (revolver, reload, lighter, rain bed, heartbeat).
+// NEON RAIN audio: John's score (assets/music/tracks.json) on two crossfading decks with a VO duck, seamless rain loops per scene
+// (OGG, MP3 fallback for iOS Safari), Media Session, and synthesized sfx (revolver, reload, lighter, heartbeat).
 (function () {
-  let ctx = null, master = null, sfxBus = null, rainGain = null, music = null, unlocked = false, noiseBuf = null;
+  let ctx = null, master = null, sfxBus = null, unlocked = false, noiseBuf = null;
   const S = () => NR.core.settings;
   function ensure() {
     if (ctx) return ctx;
@@ -82573,23 +82574,73 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     thump() { tone(55, 'sine', 0.9, 0.5, null, 30); noise(0.1, 'lowpass', 300, 0.7, 0.5, 0.001, 0.3); },
     heartbeat(rate) { if (!ensure()) return; const t = ctx.currentTime; tone(60, 'sine', 0.35, 0.12, t, 40); tone(55, 'sine', 0.25, 0.12, t + 60 / rate * 0.32, 40); },
   };
-  function rainBed(on, level) {
-    if (!ensure()) return;
-    if (!rainGain) { const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true; const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2200; f.Q.value = 0.4; rainGain = ctx.createGain(); rainGain.gain.value = 0; src.connect(f); f.connect(rainGain); rainGain.connect(sfxBus); src.start(); }
-    rainGain.gain.setTargetAtTime(on ? (level || 0.06) : 0, ctx.currentTime, 0.6);
+  // ---------------------------------------------------------------- music: two decks, 1.5 s crossfade, VO duck
+  let musicBus = null, duckV = 1; const decks = []; let deckOn = -1, cueId = null, tracks = null, onEnded = null, loopMode = true;
+  const FALLBACK_TRACKS = { album: 'NEON RAIN: The Glass Saint', tracks: [] };
+  function loadTracks() {
+    if (tracks) return Promise.resolve(tracks);
+    return fetch(NR.ASSET + 'music/tracks.json').then(r => r.json()).catch(() => FALLBACK_TRACKS).then(j => (tracks = j));
   }
-  function playMusic(url) {
-    if (!music) { music = new Audio(); music.loop = true; music.preload = 'auto'; }
-    music.volume = S().music;
-    if (music.dataset.src !== url) { music.src = url; music.dataset.src = url; }
-    if (unlocked) { const p = music.play(); if (p && p.catch) p.catch(() => {}); }
+  function deck(i) {
+    if (decks[i]) return decks[i];
+    const el = new Audio(); el.preload = 'auto'; el.crossOrigin = 'anonymous'; el.loop = true;
+    const d = { el, gain: null };
+    if (ensure()) { const src = ctx.createMediaElementSource(el); d.gain = ctx.createGain(); d.gain.gain.value = 0; src.connect(d.gain); d.gain.connect(musicBusNode()); }
+    el.addEventListener('ended', () => { if (decks[deckOn] === d && onEnded) onEnded(); });
+    return (decks[i] = d);
   }
-  function duck(v) { if (music) music.volume = S().music * v; }
+  function musicBusNode() { if (!musicBus) { musicBus = ctx.createGain(); musicBus.gain.value = S().music; musicBus.connect(master); } return musicBus; }
+  function trackOf(id) { return tracks && tracks.tracks.find(t => t.id === id); }
+  // play cue `id` (a tracks.json id); fades the other deck out over `fade` seconds
+  async function cue(id, fade = 1.5, opts = {}) {
+    await loadTracks(); const t = trackOf(id); if (!t) return;
+    if (id === cueId && !opts.restart) return; cueId = id; loopMode = opts.loop !== false;
+    const next = deckOn === 0 ? 1 : 0, d = deck(next), old = decks[deckOn];
+    d.el.loop = loopMode; d.el.src = NR.ASSET + 'music/' + t.file; try { d.el.currentTime = opts.at || 0; } catch (e) {}
+    if (unlocked) { const p = d.el.play(); if (p && p.catch) p.catch(() => {}); }
+    const now = ctx ? ctx.currentTime : 0;
+    if (d.gain) { d.gain.gain.cancelScheduledValues(now); d.gain.gain.setValueAtTime(0.0001, now); d.gain.gain.linearRampToValueAtTime(1, now + fade); } else d.el.volume = S().music;
+    if (old && old !== d) { if (old.gain) { old.gain.gain.cancelScheduledValues(now); old.gain.gain.setValueAtTime(old.gain.gain.value, now); old.gain.gain.linearRampToValueAtTime(0.0001, now + fade); } const oe = old.el; setTimeout(() => { if (decks[deckOn] !== old) oe.pause(); }, fade * 1000 + 80); }
+    deckOn = next; mediaSession(t); NR.bus.emit('music', { id, title: t.title });
+    try { const heard = JSON.parse(localStorage.getItem('neonRainFps.heard') || '[]'); if (!heard.includes(id)) { heard.push(id); localStorage.setItem('neonRainFps.heard', JSON.stringify(heard)); } } catch (e) {}
+  }
+  function current() { const d = decks[deckOn]; return d ? d.el : null; }
+  function setOnEnded(f) { onEnded = f; }
+  function duck(v) { duckV = v; if (musicBus) musicBus.gain.setTargetAtTime(S().music * v, ctx.currentTime, 0.25); else { const c = current(); if (c) c.volume = S().music * v; } }
+  function mediaSession(t) {
+    if (!('mediaSession' in navigator) || !t) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: 'NEON RAIN', album: (tracks && tracks.album) || 'NEON RAIN', artwork: [{ src: NR.ASSET + 'og-office.jpg', sizes: '1200x630', type: 'image/jpeg' }] });
+      const J = NR.jukebox;
+      const h = { play: () => { const c = current(); if (c) c.play(); }, pause: () => { const c = current(); if (c) c.pause(); }, previoustrack: () => J && J.prev(), nexttrack: () => J && J.next(),
+        seekto: (e) => { const c = current(); if (c && e.seekTime != null) c.currentTime = e.seekTime; } };
+      for (const k in h) navigator.mediaSession.setActionHandler(k, h[k]);
+    } catch (e) {}
+  }
+  // ---------------------------------------------------------------- rain ambience: seamless AudioBuffer loops, 2 s crossfade
+  const rainBufs = {}; let rainNow = [];
+  const RAIN_EXT = (() => { try { return new Audio().canPlayType('audio/ogg; codecs="vorbis"') ? '.ogg' : '.mp3'; } catch (e) { return '.mp3'; } })();
+  function rainBuf(name) { if (!rainBufs[name]) rainBufs[name] = fetch(NR.ASSET + 'rain/' + name + RAIN_EXT).then(r => r.arrayBuffer()).then(b => new Promise((res, rej) => ctx.decodeAudioData(b, res, rej))); return rainBufs[name]; }
+  // layers: [[name, gain], ...]
+  async function ambience(layers) {
+    if (!ensure()) return; const now = ctx.currentTime;
+    for (const n of rainNow) { n.g.gain.cancelScheduledValues(now); n.g.gain.setValueAtTime(n.g.gain.value, now); n.g.gain.linearRampToValueAtTime(0.0001, now + 2); const src = n.src; setTimeout(() => { try { src.stop(); } catch (e) {} }, 2200); }
+    rainNow = [];
+    for (const [name, gain] of layers) {
+      try {
+        const buf = await rainBuf(name), src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = buf; src.loop = true;
+        g.gain.value = 0.0001; src.connect(g); g.connect(sfxBus); src.start(0, Math.random() * buf.duration);
+        g.gain.linearRampToValueAtTime(gain, ctx.currentTime + 2); rainNow.push({ src, g });
+      } catch (e) { console.warn('rain loop failed', name, e); }
+    }
+  }
+  function rainBed(on) { if (!on) ambience([]); }
+  function playMusic(id) { return cue(id); }
   function unlock() {
     unlocked = true; ensure(); if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
-    if (music && music.src) { const p = music.play(); if (p && p.catch) p.catch(() => {}); }
+    const c = current(); if (c && c.src) { const p = c.play(); if (p && p.catch) p.catch(() => {}); }
   }
-  function setVolumes() { if (sfxBus) sfxBus.gain.value = S().sfx; if (music) music.volume = S().music; }
+  function setVolumes() { if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; }
   function init() {
     const B = NR.bus;
     B.on('shot', () => fx.shot()); B.on('dryFire', () => fx.dry()); B.on('reload', () => fx.reload());
@@ -82597,7 +82648,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     B.on('enemyShot', d => { const P = NR.player; fx.enemyShot(P ? d.pos.distanceTo(P.pos) : 10); });
     B.on('smoke', () => { fx.lighter(); setTimeout(fx.inhale, 400); }); B.on('focus', () => fx.focus()); B.on('clue', () => fx.clue());
   }
-  NR.audio = { init, fx, unlock, playMusic, duck, rainBed, setVolumes, get unlocked() { return unlocked; } };
+  NR.audio = { init, fx, unlock, playMusic, cue, duck, rainBed, ambience, setVolumes, loadTracks, current, setOnEnded, trackOf, get tracks() { return tracks; }, get cueId() { return cueId; }, get deckGains() { return decks.map(d => d.gain ? +d.gain.gain.value.toFixed(3) : null); }, get unlocked() { return unlocked; } };
 })();
 
 </script>
@@ -82767,10 +82818,11 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 #nru .btn.red{border-color:#b8241c;color:#ffd8cc;box-shadow:0 0 12px rgba(184,36,28,.5)}
 #nru .btn:active{background:rgba(234,223,202,.2)}
 #nru .title{background:radial-gradient(ellipse at 50% 35%,rgba(0,0,0,.05),rgba(0,0,0,.75) 80%)}
-#nru .logo{font-family:Georgia,serif;font-weight:bold;font-size:58px;letter-spacing:.08em;line-height:1;color:#fff4ea;text-shadow:0 0 6px #ff4a3a,0 0 22px #d8261a,0 0 44px #b8241c;margin-top:-20vh}
+#nru .logo{font-family:Georgia,serif;font-weight:bold;font-size:58px;letter-spacing:.08em;line-height:1;color:#fff4ea;text-shadow:0 0 6px #ff4a3a,0 0 22px #d8261a,0 0 44px #b8241c;margin-top:-50vh}
 #nru .logo small{display:block;font-size:13px;letter-spacing:.42em;color:#eadfca;text-shadow:0 1px 3px #000;margin-top:18px;font-weight:normal}
 #nru .logo em{display:block;font-style:italic;font-size:22px;letter-spacing:.06em;color:#eadfca;text-shadow:0 1px 4px #000;margin-top:8px;font-weight:normal}
-#nru .menu{position:absolute;left:0;right:0;bottom:12%}
+#nru .menu{position:absolute;left:0;right:0;bottom:9%}
+#nru .menu .btn{width:66%;margin:8px auto;background:rgba(6,5,4,.55)}
 #nru .foot{position:absolute;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom,0px));font-size:10px;letter-spacing:.2em;color:#8a8070;font-family:"Courier New",monospace}
 #nru .set{width:86%;max-width:360px;text-align:left}
 #nru .set .row{display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid rgba(234,223,202,.2);font-family:"Courier New",monospace;font-weight:bold;letter-spacing:.12em;font-size:13px}
@@ -82818,7 +82870,52 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 #nru .cf .close{margin-top:14px;position:sticky;bottom:6px;background:#1b1712;flex-shrink:0}
 #nru .ec .stats{font-family:"Courier New",monospace;font-size:13px;letter-spacing:.12em;line-height:1.9;margin:22px 0;text-align:left;display:inline-block}
 #nru .ec .stats b{color:#e8b040}
-@keyframes nrblink{50%{opacity:.25}}`;
+@keyframes nrblink{50%{opacity:.25}}
+#nru .title.jbopen .menu{display:none}
+#nru .jb{position:absolute;left:17%;right:17%;bottom:7%;display:none;pointer-events:auto;z-index:25;font-family:"Courier New",monospace;color:#eadfca;max-height:60%;overflow-y:auto;touch-action:pan-y;scrollbar-width:none}
+#nru .jb::-webkit-scrollbar{display:none}
+#nru .jb.on{display:block}
+#nru .jb .row{position:relative;margin:5px 0;padding:8px 10px;border:1px solid rgba(234,223,202,.55);background:rgba(6,5,4,.6);font-weight:bold;font-size:11px;letter-spacing:.14em;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nru .jb .row.tr{text-align:left;padding-left:22px;margin:4px 0;font-size:10.5px}
+#nru .jb .row .mk{position:absolute;left:8px;color:#d8261a;visibility:hidden}
+#nru .jb .row.cur{border-color:#b8241c;color:#fff;box-shadow:0 0 10px rgba(184,36,28,.45)}
+#nru .jb .row.cur .mk{visibility:visible}
+#nru .jb .row .pl{position:absolute;left:0;bottom:0;height:1px;width:0;background:#d8261a}
+#nru .jb .row.back{margin-top:10px;font-size:12px;letter-spacing:.2em}
+#nru .jb .ctl{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:0 16px;margin:8px 0 2px;font-weight:bold;font-size:12px;letter-spacing:.12em;text-shadow:0 1px 3px #000}
+#nru .jb .ctl span{padding:7px 6px;color:#eadfca;font-size:15px;text-shadow:0 0 4px #000,0 1px 3px #000}
+#nru .jb .ctl .pp{color:#ff5a48;font-size:14px}
+#nru .jb .ctl .tg{font-size:10px !important;letter-spacing:.16em;color:#a89c88}
+#nru .jb .ctl .br{flex-basis:100%;height:0;padding:0}
+#nru .jb .ctl .tg.on{color:#e8b040}
+#nru .jb .sc{display:flex;align-items:center;gap:6px;font-size:9.5px;color:#a89c88;text-shadow:0 1px 2px #000}
+#nru .jb .sc input{flex:1;height:22px;touch-action:pan-x;margin:0;-webkit-appearance:none;appearance:none;background:transparent}
+#nru .jb .sc input::-webkit-slider-runnable-track{height:1px;background:rgba(234,223,202,.45)}
+#nru .jb .sc input::-moz-range-track{height:1px;background:rgba(234,223,202,.45)}
+#nru .jb .sc input::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;border-radius:50%;background:#d8261a;margin-top:-4px;box-shadow:0 0 6px rgba(216,38,26,.8)}
+#nru .jb .sc input::-moz-range-thumb{width:9px;height:9px;border:none;border-radius:50%;background:#d8261a}
+#nru .jb.vb{background:linear-gradient(rgba(4,3,2,.0),rgba(4,3,2,.72) 8%,rgba(4,3,2,.72) 92%,rgba(4,3,2,0));padding:10px 4px}
+#nru .jb .ln-h{text-align:center;font-size:9.5px;letter-spacing:.3em;color:#e8b040;margin:4px 0 8px}
+#nru .jb .ln{display:flex;align-items:baseline;gap:6px;padding:5px 2px;font-size:10.5px;letter-spacing:.08em;color:#d8ceb8}
+#nru .jb .ln .n{color:#8a8070}
+#nru .jb .ln .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70%}
+#nru .jb .ln .dots{flex:1;border-bottom:1px dotted rgba(234,223,202,.45);transform:translateY(-3px);min-width:12px}
+#nru .jb .ln .len{color:#a89c88}
+#nru .jb .ln.cur{color:#fff}
+#nru .jb .ln.cur .n{color:#d8261a}
+#nru .jb .ln.cur .n::before{content:"\\25B8 ";color:#d8261a}
+#nru .jb .np{margin:10px 0 4px;font-size:10px;letter-spacing:.14em;color:#eadfca;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nru .jb .np b{color:#d8261a}
+#nru .jb .dial{display:flex;align-items:stretch;border:1px solid #b8241c;background:rgba(6,5,4,.62);box-shadow:0 0 12px rgba(184,36,28,.45);touch-action:pan-y}
+#nru .jb .dial .ar{display:flex;align-items:center;padding:0 14px;font-size:22px;color:#ff5a48}
+#nru .jb .dial .dm{flex:1;text-align:center;padding:9px 2px 8px;min-width:0}
+#nru .jb .dial .lab{display:block;font-size:8.5px;letter-spacing:.3em;color:#e8b040}
+#nru .jb .dial .dt{display:block;margin:4px 0 7px;font-family:Georgia,serif;font-size:14px;letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nru .jb .dial .hl{height:1px;background:rgba(234,223,202,.2);margin:0 6px}
+#nru .jb .dial .hl i{display:block;height:1px;width:0;background:#d8261a}
+#nru .jb .ctl .lt{color:#e8b040 !important}
+#nru .jb .dl{display:none;margin:4px 0 6px;padding:4px 8px;background:rgba(4,3,2,.7)}
+#nru .jb .dl.on{display:block}`;
 
   const h = (tag, cls, html, parent) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; (parent || root).appendChild(e); return e; };
   const tapOnce = (el) => new Promise(r => { const f = (ev) => { ev.preventDefault(); ev.stopPropagation(); el.removeEventListener('pointerup', f); r(); }; el.addEventListener('pointerup', f); });
@@ -82849,7 +82946,9 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     // screens
     E.title = h('div', 'scr title', '<div class="logo">NEON RAIN<em>The Glass Saint</em><small>CASE 01</small></div><div class="menu"></div><div class="foot">GREY-BOX SLICE</div>');
     const menu = E.title.querySelector('.menu');
-    E.begin = h('div', 'btn red', 'BEGIN CASE', menu); E.setBtn = h('div', 'btn', 'SETTINGS', menu);
+    E.begin = h('div', 'btn red', 'BEGIN CASE', menu); E.jbBtn = h('div', 'btn', 'JUKEBOX', menu); E.setBtn = h('div', 'btn', 'SETTINGS', menu);
+    onTap(E.jbBtn, () => NR.jukebox.open());
+    E.jb = h('div', 'jb', '', E.title);
     onTap(E.setBtn, () => settingsOpen(true));
     E.set = h('div', 'scr', '<div class="set"><h2>SETTINGS</h2><div class="rows"></div></div>'); E.set.style.zIndex = 30;
     E.pause = h('div', 'scr', '<h2 style="font-family:Courier New,monospace;letter-spacing:.3em;color:#e8b040">PAUSED</h2>');
@@ -82876,6 +82975,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     row('SOUND', Math.round(s.sfx * 10), () => { s.sfx = Math.max(0, +(s.sfx - 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); }, () => { s.sfx = Math.min(1, +(s.sfx + 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); });
     row('LOOK SPEED', (s.sens || 1).toFixed(1), () => { s.sens = Math.max(0.4, +((s.sens || 1) - 0.1).toFixed(1)); core.saveSettings(); }, () => { s.sens = Math.min(2.5, +((s.sens || 1) + 0.1).toFixed(1)); core.saveSettings(); });
     row('CHARACTERS', s.chars === '3d' ? '3D' : 'PAINTED', null, () => { s.chars = s.chars === '3d' ? 'painted' : '3d'; core.saveSettings(); });
+    row('JUKEBOX: SHOW ALL', s.jbAll === false ? 'OFF' : 'ON', null, () => { s.jbAll = s.jbAll === false; core.saveSettings(); if (NR.jukebox.isOpen) NR.jukebox.render(); });
     row('QUALITY', s.quality.toUpperCase(), null, () => { core.setQuality(s.quality === 'high' ? 'low' : 'high'); });
     if (!E.set.querySelector('.done')) { const d = h('div', 'btn done', 'DONE', E.set.querySelector('.set')); d.style.marginTop = '18px'; onTap(d, () => settingsOpen(false)); }
     E.set.classList.add('on');
@@ -82904,7 +83004,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     return new Promise(async (res) => {
       const vo = /V\.O\./.test(who);
       E.dlg.classList.toggle('vo', vo); E.who.textContent = who; E.who.className = 'who' + (who === 'VELA' ? ' vela' : '');
-      E.dlg.classList.add('on'); E.txt.textContent = ''; E.more.style.visibility = 'hidden';
+      E.dlg.classList.add('on'); E.txt.textContent = ''; E.more.style.visibility = 'hidden'; clearTimeout(UI.undT); NR.audio.duck(0.5); // duck the score under VO
       let i = 0, done = false; const speed = UI.fast ? 4000 : 42;
       await new Promise(r2 => {
         let acc = 0, last = performance.now();
@@ -82915,7 +83015,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       });
       typing = null; E.more.style.visibility = 'visible';
       await advance(E.dlg);
-      E.dlg.classList.remove('on'); res();
+      E.dlg.classList.remove('on'); UI.undT = setTimeout(() => NR.audio.duck(1), 700); res();
     });
   }
   function advance(el) { return new Promise(r => { let done = false; const fin = () => { if (done) return; done = true; el.removeEventListener('pointerup', f); removeEventListener('keydown', k, true); setTimeout(r, 30); };
@@ -83067,6 +83167,72 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const UI = NR.ui = { init(c) { core = c; build(); }, gate, title, say, lines, card, tutorial, letterbox, toast, objective, prompt, update, caseFile, interrogate, gameOver, endCard, show, settingsOpen, fast: false, get el() { return E; } };
 })();
 
+// NEON RAIN jukebox (landing menu), in the menu's own style. Three switchable designs: ?jb=a (inline list),
+// ?jb=b (liner notes), ?jb=c (radio dial, default per John 10/7/26). Play/pause, prev/next, scrub, shuffle, repeat; keeps playing after BACK;
+// lock-screen controls through the Media Session set in audio.js. Tracks come from assets/music/tracks.json.
+(function () {
+  const A = () => NR.audio;
+  const V = (new URLSearchParams(location.search).get('jb') || 'c').toLowerCase().replace(/[^abc]/g, '') || 'c';
+  let el = null, list = [], idx = -1, shuffle = false, repeat = 'all', open = false, raf = 0, dialList = false;
+  const fmt = s => isFinite(s) ? Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0') : '0:00';
+  const up = s => s.toUpperCase();
+  function visible() {
+    const all = NR.core.settings.jbAll !== false; let heard = [];
+    try { heard = JSON.parse(localStorage.getItem('neonRainFps.heard') || '[]'); } catch (e) {}
+    return A().tracks.tracks.filter(t => all || heard.includes(t.id) || t.unlock === 'title');
+  }
+  const toggles = () => '<i class="br"></i><span data-act="shuf" class="tg">SHUFFLE</span><span data-act="rep" class="tg">REPEAT ALL</span>';
+  const scrub = () => '<div class="sc"><span class="ta">0:00</span><input type="range" min="0" max="1000" value="0" data-tap="1"><span class="tb">0:00</span></div>';
+  function html() {
+    if (V === 'b') return '<div class="ln-h">ORIGINAL SCORE &middot; SIDE A</div>' +
+      list.map((t, i) => '<div class="ln" data-i="' + i + '"><span class="n">' + t.id + '</span><span class="tt">' + up(t.title) + '</span><span class="dots"></span><span class="len">' + (t.len || '') + '</span></div>').join('') +
+      '<div class="np"></div>' + scrub() + '<div class="ctl"><span data-act="prev">&#x25C2;&#x25C2;</span><span data-act="play" class="pp">&#x25B6;</span><span data-act="next">&#x25B8;&#x25B8;</span>' + toggles() + '</div><div class="row back" data-act="back">BACK</div>';
+    if (V === 'c') return '<div class="dial"><span class="ar" data-act="prev">&#x25C2;</span><div class="dm"><small class="lab">NOW PLAYING</small><b class="dt"></b><div class="hl"><i></i></div></div><span class="ar" data-act="next">&#x25B8;</span></div>' +
+      '<div class="ctl"><span data-act="play" class="pp">&#x25B6;</span>' + toggles() + '<span data-act="list" class="tg lt">TRACK LIST &#x25BE;</span></div>' +
+      '<div class="dl">' + list.map((t, i) => '<div class="ln" data-i="' + i + '"><span class="n">' + t.id + '</span><span class="tt">' + up(t.title) + '</span><span class="dots"></span><span class="len">' + (t.len || '') + '</span></div>').join('') + '</div>' +
+      scrub() + '<div class="row back" data-act="back">BACK</div>';
+    return list.map((t, i) => '<div class="row tr" data-i="' + i + '"><span class="mk">&#x25B8;</span>' + up(t.title) + '<i class="pl"></i></div>').join('') +
+      '<div class="ctl"><span data-act="prev">&#x25C2;&#x25C2;</span><span data-act="play" class="pp">&#x25B6;</span><span data-act="next">&#x25B8;&#x25B8;</span>' + toggles() + '</div>' + scrub() + '<div class="row back" data-act="back">BACK</div>';
+  }
+  function tap(e, fn) { e.classList.add('tap'); e.setAttribute('data-tap', '1'); e.addEventListener('pointerup', ev => { ev.preventDefault(); ev.stopPropagation(); fn(); }); }
+  function render() {
+    el = NR.ui.el.jb; list = visible(); el.className = 'jb on v' + V; el.innerHTML = html();
+    el.querySelectorAll('[data-i]').forEach(r => tap(r, () => play(+r.dataset.i)));
+    const acts = { play: toggle, prev, next, back: close, shuf: () => { shuffle = !shuffle; sync(); }, list: () => { dialList = !dialList; sync(); },
+      rep: () => { repeat = repeat === 'all' ? 'one' : repeat === 'one' ? 'off' : 'all'; const c = A().current(); if (c) c.loop = repeat === 'one'; sync(); } };
+    el.querySelectorAll('[data-act]').forEach(b => tap(b, acts[b.dataset.act]));
+    const rg = el.querySelector('input'); rg.addEventListener('input', () => { const c = A().current(); if (c && isFinite(c.duration)) c.currentTime = rg.value / 1000 * c.duration; });
+    if (V === 'c') { const box = el.querySelector('.dial'); let x0 = null; box.addEventListener('pointerdown', e => { x0 = e.clientX; }); box.addEventListener('pointerup', e => { if (x0 != null && Math.abs(e.clientX - x0) > 40) (e.clientX < x0 ? next : prev)(); x0 = null; }); }
+    idx = list.findIndex(t => t.id === A().cueId); sync();
+  }
+  function sync() {
+    if (!el) return; const c = A().current(), playing = !!(c && !c.paused), t = list[idx];
+    el.querySelectorAll('.pp').forEach(p => { p.innerHTML = playing ? '&#x275A;&#x275A;' : '&#x25B6;'; });
+    el.querySelectorAll('[data-i]').forEach(r => { r.classList.toggle('cur', +r.dataset.i === idx); r.classList.toggle('play', +r.dataset.i === idx && playing); });
+    const sh = el.querySelector('[data-act="shuf"]'); sh.classList.toggle('on', shuffle);
+    const rp = el.querySelector('[data-act="rep"]'); rp.textContent = 'REPEAT ' + up(repeat); rp.classList.toggle('on', repeat !== 'off');
+    const np = el.querySelector('.np'); if (np) np.innerHTML = t ? '<b>' + (playing ? '&#x25B8;' : '&#x275A;&#x275A;') + '</b> ' + up(t.title) : 'TAP A TITLE TO PLAY';
+    const dt = el.querySelector('.dt'); if (dt) { dt.textContent = t ? up(t.title) : 'THE BLUE ORCHID'; el.querySelector('.lab').textContent = playing ? 'NOW PLAYING' : 'PAUSED'; }
+    const dl = el.querySelector('.dl'); if (dl) { dl.classList.toggle('on', dialList); el.querySelector('.lt').innerHTML = 'TRACK LIST ' + (dialList ? '&#x25B4;' : '&#x25BE;'); }
+  }
+  function tick() {
+    raf = requestAnimationFrame(tick); if (!open || !el) return; const c = A().current(); if (!c) return; const f = isFinite(c.duration) && c.duration ? c.currentTime / c.duration : 0;
+    const rg = el.querySelector('input'); if (rg && document.activeElement !== rg) rg.value = f * 1000;
+    const ta = el.querySelector('.ta'), tb = el.querySelector('.tb'); if (ta) { ta.textContent = fmt(c.currentTime); tb.textContent = fmt(c.duration); }
+    const pl = el.querySelector('.row.cur .pl'); if (pl) pl.style.width = (f * 100).toFixed(1) + '%';
+    const hl = el.querySelector('.hl i'); if (hl) hl.style.width = (f * 100).toFixed(1) + '%';
+  }
+  function play(i) { if (!list[i]) return; idx = i; NR.audio.unlock(); A().cue(list[i].id, 1.5, { loop: repeat === 'one', restart: true }).then(sync); A().setOnEnded(onEnd); setTimeout(sync, 80); }
+  function onEnd() { if (repeat === 'off' && !shuffle && idx >= list.length - 1) { sync(); return; } next(); }
+  function next() { if (!list.length) return; play(shuffle ? pickRandom() : (idx + 1) % list.length); }
+  function prev() { const c = A().current(); if (c && c.currentTime > 3) { c.currentTime = 0; return; } play((Math.max(0, idx) - 1 + list.length) % list.length); }
+  function pickRandom() { if (list.length < 2) return 0; let j; do { j = Math.floor(Math.random() * list.length); } while (j === idx); return j; }
+  function toggle() { const c = A().current(); if (!c || idx < 0) { play(Math.max(0, idx)); return; } if (c.paused) c.play().catch(() => {}); else c.pause(); setTimeout(sync, 40); }
+  function close() { open = false; NR.ui.el.jb.classList.remove('on'); NR.ui.el.title.classList.remove('jbopen'); }
+  async function openPanel() { await A().loadTracks(); open = true; NR.ui.el.title.classList.add('jbopen'); render(); if (!raf) tick(); A().setOnEnded(onEnd); }
+  NR.jukebox = { open: openPanel, close, play, next, prev, toggle, render, variant: V, get isOpen() { return open; }, get index() { return idx; }, get list() { return list; }, get shuffle() { return shuffle; }, get repeat() { return repeat; } };
+})();
+
 </script>
 <script>/* game.js */
 // NEON RAIN game: the director. Loads levels, runs the slice beats (office -> alley -> Blue Orchid), SCAN and INTERACT,
@@ -83090,7 +83256,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     for (const c of G.chars) c.remove(); G.chars = []; A.clear(); G.triggers = []; G.interacts = []; G.clues = [];
     core.setScene(L.scene, L.shaft); NR.fx.attach(L); P.setLevel(L);
     P.place(L.spawn.pos, L.spawn.yaw, 0);
-    NR.audio.rainBed(true, L.outdoor ? 0.09 : 0.035);
+    NR.audio.ambience(NR.RAIN[name] || []);
     return L;
   }
   G.load = load;
@@ -83188,13 +83354,13 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // ================================================================ BEAT 1: the office
   async function office() {
-    G.beat = 'office'; const L = load('office'); P.armed = false; P.hideGun = false; P.lives = C.LIVES;
+    G.beat = 'office'; NR.audio.cue('01'); const L = load('office'); P.armed = false; P.hideGun = false; P.lives = C.LIVES;
     P.place(L.spawn.pos, 0.35, 0.05); setState('CUTSCENE'); core.fx.fade = 1;
     await UI.card(S.office.card, 2.4);
-    lookAt(V3(0.85, 1.8, -4.6), 5); core.fadeTo(0, 1.6);
+    lookAt(V3(0.85, 1.8, -4.6), 5); core.fadeTo(0, 1.6); NR.audio.cue('02');
     await UI.lines(S.office.open);
     // the door opens
-    NR.audio.fx.door(); const vela = await A.character('vela', L, V3(-1.0, 0, -6.1), 0); G.chars.push(vela);
+    NR.audio.fx.door(); NR.audio.cue('03'); const vela = await A.character('vela', L, V3(-1.0, 0, -6.1), 0); G.chars.push(vela);
     lookAt(V3(-1.0, 1.5, -4.6), 1.2);
     for (let k = 0; k <= 30; k++) { L.door.rotation.y = 1.15 * (k / 30) * (2 - k / 30); await wait(0.02); }
     const doorIdx = L.boxes.indexOf(L.doorCol); if (doorIdx >= 0) L.boxes.splice(doorIdx, 1);
@@ -83222,7 +83388,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     G.beat = 'office_leave';
     vela.walkTo([V3(-1.5, 0, -2.4), V3(-1.0, 0, -4.2), V3(-1.0, 0, -6.2)], 1.1).then(() => { vela.visible = false; });
     await UI.lines(S.office.leave); await waitFor(() => !vela.path);
-    G.lookTarget = null; G.lockMove = false;
+    G.lookTarget = null; G.lockMove = false; NR.audio.cue('02');
     // take the revolver, go
     let took = false;
     interact({ pos: V3(-0.12, 0.8, -0.35), r: 1.5, label: 'TAKE GUN', enabled: () => !took, use: async () => { took = true; L.deskGun.visible = false; P.armed = true; P.rounds = C.GUN_ROUNDS; NR.audio.fx.reload(); setState('CUTSCENE'); await UI.tutorial(S.office.gunTut); setState('PLAY'); objective('Miles is waiting. Go out the door.'); } });
@@ -83233,7 +83399,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // ================================================================ BEAT 2: the alley
   async function alley() {
-    G.beat = 'alley'; await UI.card(S.alley.card, 2.4);
+    G.beat = 'alley'; NR.audio.cue('01'); await UI.card(S.alley.card, 2.4);
     const L = load('alley'); P.armed = true; P.lives = C.LIVES; P.reset(); P.place(L.spawn.pos, 0, 0);
     setState('CUTSCENE'); lookAt(V3(0, 1.4, -20), 2); core.fadeTo(0, 1.2);
     A.corpse(L, L.bodyPos, 0.4); NR.fx.pool(L.bodyPos.clone().add(V3(0.1, 0, -0.5)), 'human'); NR.fx.pool(L.bodyPos.clone().add(V3(-0.2, 0, 0.2)), 'human');
@@ -83246,9 +83412,9 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     startFight(spawnFn, { pos: L.spawn.pos, yaw: 0 });
     setState('PLAY'); G.beat = 'alley_play'; objective('Find Miles. The end of the alley.');
     let woke = false;
-    trigger(() => P.pos.z < -6.5, () => { woke = true; for (const e of A.enemies) e.alert(); UI.toast('HARROW (V.O.)', S.alley.fight[0][1], 4); objective('Put them down.'); G.beat = 'alley_fight'; });
+    trigger(() => P.pos.z < -6.5, () => { woke = true; for (const e of A.enemies) e.alert(); NR.audio.cue('07'); UI.toast('HARROW (V.O.)', S.alley.fight[0][1], 4); objective('Put them down.'); G.beat = 'alley_fight'; });
     await waitFor(() => woke && !alive());
-    G.fight = null; UI.toast('HARROW (V.O.)', S.alley.clear[0][1], 4); objective('Check on Miles.'); G.beat = 'alley_clear';
+    G.fight = null; NR.audio.cue('02'); UI.toast('HARROW (V.O.)', S.alley.clear[0][1], 4); objective('Check on Miles.'); G.beat = 'alley_clear';
     let checked = false;
     interact({ pos: L.bodyPos, r: 2.7, label: 'MILES', use: () => { checked = true; } });
     await waitFor(() => checked);
@@ -83259,7 +83425,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // ================================================================ BEAT 3: the Blue Orchid
   async function club() {
-    G.beat = 'club'; await UI.card(S.club.card, 2.4);
+    G.beat = 'club'; NR.audio.cue('01'); await UI.card(S.club.card, 2.4);
     const L = load('club'); P.lives = C.LIVES; P.reset(); P.place(L.spawn.pos, 0, 0);
     const dol = new A.Painted('dolores', L, L.doloresPos, Math.atan2(-5.6, 12)); G.chars.push(dol);
     const fightOnly = new URLSearchParams(location.search).get('beat') === 'clubfight'; // dev: straight to the club gunfight
@@ -83280,7 +83446,9 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     // cigarettes on the bar
     let tookPack = false; const pack = cm(new T.BoxGeometry(0.06, 0.02, 0.09), 0xe8e2d4); pack.position.set(-5.2, 1.18, -7.5); L.scene.add(pack);
     interact({ pos: V3(-5.0, 1.1, -7.5), r: 1.7, label: 'TAKE SMOKES', enabled: () => !tookPack, use: () => { tookPack = true; pack.visible = false; P.pack = Math.min(C.PACK_MAX, P.pack + 2); UI.toast('+2 SMOKES', 'Somebody left them on the bar. Somebody always does.', 2.5); } });
-    setState('PLAY'); G.beat = 'club_scan';
+    setState('PLAY'); G.beat = 'club_scan'; NR.audio.cue('04');
+    // Dolores's song plays from the stage: 05 near the stage, the house band (04) elsewhere
+    G.musicZone = () => { const d = Math.hypot(P.pos.x + 1.5, P.pos.z + 19.5); const near = NR.audio.cueId === '05' ? d < 8.5 : d < 7; NR.audio.cue(near ? '05' : '04'); };
     objective(() => foundCount() < 3 ? 'SCAN the club for clues (' + foundCount() + '/3)' : 'Talk to Dolores, by the dressing room.');
     let talked = false;
     interact({ pos: L.doloresPos, r: 2.2, label: 'TALK', enabled: () => !talked, use: async () => {
@@ -83288,18 +83456,19 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       talked = true;
     } });
     await waitFor(() => talked);
-    G.beat = 'club_meet'; setState('CUTSCENE'); G.lookTarget = () => V3(dol.pos.x, 1.6, dol.pos.z); dol.faceTo(P.pos);
+    G.beat = 'club_meet'; G.musicZone = null; setState('CUTSCENE'); G.lookTarget = () => V3(dol.pos.x, 1.6, dol.pos.z); dol.faceTo(P.pos);
     await UI.lines(S.club.meet); await UI.tutorial(S.club.interroTut);
-    G.beat = 'interrogation'; setState('INTERRO'); NR.audio.duck(0.45);
+    G.beat = 'interrogation'; setState('INTERRO'); NR.audio.cue('06');
     const found = {}; for (const k in G.caseData.clues) found[k] = true;
     res = await UI.interrogate('dolores', S.dolores, found);
-    NR.audio.duck(1);
+
     G.caseData.verdicts.dolores = res.verdict; if (res.offered) note(S.dolores.offer.note); save();
     UI.toast('CASE FILE', 'Verdict on Dolores Delacroix: ' + res.verdict, 3);
     G.beat = 'verdict'; setState('CUTSCENE');
     await UI.lines(S.club.afterVerdict[res.verdict]); await UI.lines(S.club.warn);
     dol.walkTo([V3(6.4, 0, -17.6), V3(7.0, 0, -22.4)], 1.4).then(() => { dol.visible = false; });
     } else { dol.visible = false; P.place(V3(5.6, 0, -14.4), 0.9, 0); core.fadeTo(0, 0.4); }
+    G.musicZone = null;
     // Gale's men come in through the front and the kitchen
     const spawnFn = () => [
       A.spawn(L, { type: 'gunman', pos: V3(-0.4, 0, 0.6), dormant: true, entry: [V3(-0.6, 0, -1.8)], drops: 0.5 }),
@@ -83308,7 +83477,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       A.spawn(L, { type: 'gunman', kind: 'artificial', pos: V3(-7.7, 0, -16.0), dormant: true, entry: [V3(-6.4, 0, -16.0)], hp: 140, drops: 1 }),
       A.spawn(L, { type: 'gunman', pos: V3(-7.7, 0, -15.6), dormant: true, entry: [V3(-6.6, 0, -14.8)], drops: 0.5 }),
     ];
-    NR.audio.fx.thump(); core.shake(0.02, 0.3);
+    NR.audio.fx.thump(); core.shake(0.02, 0.3); G.musicZone = null; NR.audio.cue('07', 0.8);
     const fight = startFight(spawnFn, { pos: V3(5.6, 0, -14.4), yaw: 0.9 });
     for (const e of fight.enemies) e.alert();
     G.lookTarget = null; setState('PLAY'); G.beat = 'club_fight'; objective('Gale\'s men. Stay alive.');
@@ -83320,8 +83489,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   async function run() {
     await UI.gate();
-    NR.audio.playMusic(NR.MUSIC.title);
-    G.beat = 'title'; await UI.title();
+    NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club);
+    G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null);
     G.t0 = performance.now(); G.titleCam = false;
     await core.fadeTo(1, 0.6);
     const skip = new URLSearchParams(location.search).get('beat'); // dev: ?beat=alley or ?beat=club
@@ -83331,7 +83500,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     await club();
     G.beat = 'end';
     const secs = Math.round((performance.now() - G.t0) / 1000);
-    setState('END'); core.fadeTo(0.55, 0.8);
+    setState('END'); core.fadeTo(0.55, 0.8); NR.audio.cue('09', 1.5, { loop: false });
     UI.endCard({ clues: foundCount(), thinks: Object.values(G.caseData.clues).filter(c => c.think).length, verdict: G.caseData.verdicts.dolores, acc: P.shots ? Math.round(P.hits / P.shots * 100) : 0, heads: P.heads, pack: P.pack, time: Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') });
   }
 
@@ -83344,7 +83513,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     if (inp.caseFile) { if (st === 'PLAY' || st === 'PAUSE') G.openCase(); else if (st === 'CASE') G.closeCase(); }
     for (let i = G.waits.length - 1; i >= 0; i--) { let ok = false; try { ok = G.waits[i].cond(); } catch (e) { console.error(e); } if (ok) { const w = G.waits[i]; G.waits.splice(i, 1); w.r(); } }
     const frozen = st === 'PAUSE' || st === 'CASE' || st === 'INTERRO' || st === 'END';
-    if (G.titleCam) { const cam = core.camera, t = core.time; cam.position.set(-0.35 + Math.sin(t * 0.1) * 0.12, 1.35, 1.1); cam.rotation.set(0.06 + Math.sin(t * 0.13) * 0.015, -0.12 + Math.sin(t * 0.08) * 0.06, 0); P.controlled = true; }
+    if (G.titleCam) { const cam = core.camera, t = core.time; cam.position.set(0.6 + Math.sin(t * 0.07) * 0.7, 1.7 + Math.sin(t * 0.11) * 0.06, -9.5 - Math.sin(t * 0.05) * 1.0); cam.rotation.set(0.1 + Math.sin(t * 0.13) * 0.01, 0.2 + Math.sin(t * 0.06) * 0.04, 0); P.controlled = true; }
     else P.controlled = false;
     if (!frozen) {
       if (G.lookTarget && st !== 'PLAY') { const p = typeof G.lookTarget === 'function' ? G.lookTarget() : G.lookTarget; const [y, pt] = yawPitchTo(p); let dy = y - P.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const k = Math.min(1, rdt * (G.lookRate || 4)); P.yaw += dy * k; P.pitch += (pt - P.pitch) * k; }
@@ -83357,6 +83526,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       else for (const e of A.enemies) if (e.dead) e.update(dt, P);
       NR.fx.update(dt, rdt);
       if (st === 'PLAY') {
+        if (G.musicZone && core.frame % 15 === 0) G.musicZone();
         updateScan(rdt);
         const it = updateInteract(); if (it && inp.interact) it.use();
         for (let i = G.triggers.length - 1; i >= 0; i--) if (G.triggers[i].test(P)) { const tr = G.triggers[i]; G.triggers.splice(i, 1); tr.fn(); }
@@ -83368,7 +83538,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   // ---------------------------------------------------------------- boot
   function boot() {
     UI.init(core); NR.controls.init(core); NR.audio.init();
-    load('office'); G.titleCam = true; setState('TITLE');
+    load('club'); G.titleCam = true; setState('TITLE'); // landing menu: the Blue Orchid stage, empty mic in the spotlight
     for (const who of ['vela', 'dolores']) A.preload(who);
     if (core.settings.chars === '3d') A.loadGLB(NR.ASSET + A.MODELS.vela).catch(() => {});
     core.startLoop();

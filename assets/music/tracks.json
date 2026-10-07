@@ -1,0 +1,11 @@
+{ "album": "NEON RAIN: The Glass Saint", "tracks": [
+  { "id": "01", "file": "01_neon_rain_main_theme.mp3", "len": "2:59", "title": "Neon Rain (Main Theme)", "cue": "The case opens. Lonely tenor sax over warm analog pads, rain and distant sirens.", "unlock": "card" },
+  { "id": "02", "file": "02_the_office.mp3", "len": "2:59", "title": "The Office", "cue": "Late-night investigation. Brushed drums, walking bass, muted trumpet, a ticking clock.", "unlock": "office" },
+  { "id": "03", "file": "03_velas_theme.mp3", "len": "2:59", "title": "Vela's Theme", "cue": "The door opens and she walks in. Slow breathy sax, smoky piano, danger.", "unlock": "vela" },
+  { "id": "04", "file": "04_the_blue_orchid.mp3", "len": "2:58", "title": "The Blue Orchid", "cue": "The house band at one in the morning. Sultry swing, clinking glasses, rain outside.", "unlock": "title" },
+  { "id": "05", "file": "05_somebody_elses_rain.mp3", "len": "2:59", "title": "Somebody Else's Rain", "cue": "Dolores's song from the stage. An after-hours torch ballad on tenor sax.", "unlock": "stage" },
+  { "id": "06", "file": "06_interrogation.mp3", "len": "2:59", "title": "Interrogation", "cue": "Questions under one lamp. A heartbeat bass, cold piano, long silences.", "unlock": "interrogation" },
+  { "id": "07", "file": "07_gunfight.mp3", "len": "2:58", "title": "Gunfight", "cue": "Six shots and no cover to spare. Driving synth bass and heavy drums.", "unlock": "fight" },
+  { "id": "08", "file": "08_the_docks.mp3", "len": "2:58", "title": "The Docks (Final Showdown)", "cue": "Storm at the docks. Pounding drums, synth choir, the last stand.", "unlock": "docks" },
+  { "id": "09", "file": "09_the_glass_saint.mp3", "len": "2:59", "title": "The Glass Saint (Ending)", "cue": "The case closes. A lonely sax dissolves into the rain.", "unlock": "end" }
+] }
