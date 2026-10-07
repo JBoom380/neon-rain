@@ -15,7 +15,17 @@
 
   // ---------------------------------------------------------------- view models (rendered in their own pass, no wall clipping)
   const vm = { scene: new T.Scene() };
-  vm.scene.add(new T.AmbientLight(0x9098a8, 1.4)); const vmRim = new T.DirectionalLight(0x9fd0ff, 2.2); vmRim.position.set(1, 0.6, -1); vm.scene.add(vmRim); const vmKey = new T.DirectionalLight(0xffe8d0, 2.4); vmKey.position.set(-1, 1.5, 0.5); vm.scene.add(vmKey);
+  // warm practicals only: amber incandescent key, sodium fill, teal neon rim (no red: the grade keeps reds as blood)
+  vm.scene.add(new T.HemisphereLight(0xc8ae98, 0x2a1408, 1.5));
+  const vmKey = new T.DirectionalLight(0xffd8b0, 2.3); vmKey.position.set(-0.6, 1.6, 0.9); vm.scene.add(vmKey);
+  const vmRim = new T.DirectionalLight(0x2ad0c0, 1.0); vmRim.position.set(1.2, 0.4, -1); vm.scene.add(vmRim);
+  const vmRed = new T.DirectionalLight(0xff7a30, 0.3); vmRed.position.set(-1.2, 0.2, -0.8); vm.scene.add(vmRed);
+  { // tiny warm environment for the blued steel's reflections (PMREM of a dark room with an amber lamp and neon strips)
+    const es = new T.Scene(); es.background = new T.Color(0x0a0705);
+    const strip = (c, w, h, x, y, z) => { const m = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshBasicMaterial({ color: c, side: T.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); es.add(m); };
+    strip(0xffa050, 3, 2, -2, 3, 1); strip(0x30e0d0, 0.4, 4, 3, 0.5, -2); strip(0xc06030, 0.4, 3, -3, 0, -2); strip(0x5a3a20, 8, 1, 0, -2, 0);
+    try { const pm = new T.PMREMGenerator(NR.core.renderer); vm.scene.environment = pm.fromScene(es, 0.03).texture; pm.dispose(); } catch (e) { console.warn('[vm env]', e); }
+  }
   const vmFlash = new T.PointLight(0xffb050, 0, 2, 1.5); vmFlash.position.set(0.15, -0.05, -0.6); vm.scene.add(vmFlash);
   const gunRig = new T.Group(); vm.scene.add(gunRig);
   const gun = NR.fx.revolverModel(); gun.scale.setScalar(1.0); gunRig.add(gun);
@@ -35,6 +45,34 @@
   const CIG_HOME = V3(-0.06, -0.085, -0.26);
   cigRig.position.copy(CIG_HOME); cigRig.rotation.set(0.1, 0.4, 0.2); cigRig.scale.setScalar(0.6); cigRig.visible = false;
   vm.scene.visible = true; NR.core.vm = vm; P.vm = vm;
+
+  // modelled viewmodel (tools/env/viewmodel.py): revolver in a gloved right hand, cigarette in the left. Code models above
+  // stay as the fallback until the GLB arrives.
+  const vmp = { drum: gun.userData.drum, axis: 'y', crane: null };
+  const VM_GUN = { pos: V3(0.036, -0.098, -0.26), rot: V3(0.08, 0.26, 0.16) }, VM_CIG = { pos: V3(-0.06, -0.125, -0.27), rot: V3(0.6, -0.45, 0.35) };
+  if (NR.gltf) NR.fx.vmAsset = NR.gltf.load(NR.ASSET + 'models/vm_revolver.glb').then(({ scene }) => {
+    const N = k => scene.getObjectByName(k), rigR = N('rig_r'), rigL = N('rig_l'), muz = N('muzzle'), drum = N('cylinder'), crane = N('crane'), tip = N('cig_tip');
+    const lefts = { cig: N('hand_l'), cup: N('hand_l_cup'), relax: N('hand_l_relax') }, cigNode = N('cig');
+    // left-hand pose variants: 'cig' (between index and middle), 'cup' (shielding a match), 'relax' (empty)
+    P.setLeftHand = (k) => { for (const n in lefts) if (lefts[n]) lefts[n].visible = n === k; if (cigNode) cigNode.visible = k === 'cig'; P.leftPose = k; };
+    P.setLeftHand('cig');
+    if (!rigR || !rigL || !muz || !drum || !crane || !tip) throw new Error('vm_revolver.glb: rigs missing');
+    scene.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; if (o.material.metalness > 0.5) o.material.envMapIntensity = 2.6; } });
+    if (NR.fx.useRevolverAsset) NR.fx.useRevolverAsset(N('revolver')); // desk revolver uses the same model
+    // gun: full scale, lower right
+    gun.visible = false; sleeve.visible = false; glove.visible = false;
+    gunRig.scale.setScalar(1); GUN_HOME.copy(VM_GUN.pos); gunRig.add(rigR); rigR.rotation.set(VM_GUN.rot.x, VM_GUN.rot.y, VM_GUN.rot.z);
+    muz.add(flashSpr); flashSpr.position.set(0, 0, -0.01); flashSpr.scale.setScalar(0.12);
+    vmp.drum = drum; vmp.axis = 'z'; vmp.crane = crane;
+    // cigarette hand: lower left, ember + smoke on the modelled tip
+    hand.visible = false; sleeve2.visible = false; cig.visible = false; ember.visible = false;
+    cigRig.scale.setScalar(1); cigRig.rotation.set(0, 0, 0); CIG_HOME.copy(VM_CIG.pos); cigRig.add(rigL); rigL.rotation.set(VM_CIG.rot.x, VM_CIG.rot.y, VM_CIG.rot.z);
+    tip.add(emberGlow); emberGlow.position.set(0, 0, 0); emberGlow.scale.setScalar(0.034);
+    // ember: a small orange-red tip kept under the grade's halation threshold (no star/plus artefact), soft glow around it
+    scene.traverse(o => { if (o.isMesh && /ember/.test(o.material.name)) { o.material = new T.MeshBasicMaterial({ color: new T.Color(0.82, 0.24, 0.05) }); } });
+    tip.add(cigSmoke); cigSmoke.position.set(-0.087, -0.05, 0.02);
+    P.vmGLB = true;
+  }).catch(e => console.warn('[vm glb]', e));
 
   // ---------------------------------------------------------------- combat helpers
   function enemiesAlert() { return NR.actors.enemies.some(e => !e.dead && e.state !== 'dormant' && e.state !== 'idle'); }
@@ -151,12 +189,18 @@
     const live = NR.core.state === 'PLAY' || NR.core.state === 'DOWN'; gunRig.visible = P.armed && !P.hideGun && live;
     const rel = P.reloadT > 0 ? Math.sin(Math.PI * (1 - P.reloadT / C.GUN_RELOAD)) : 0;
     gunRig.position.set(GUN_HOME.x + Math.sin(P.bob * 0.5) * 0.008 - rel * 0.06, GUN_HOME.y + Math.abs(Math.cos(P.bob * 0.5)) * 0.008 - rel * 0.05 + P.recoil * 0.015, GUN_HOME.z + P.recoil * 0.04);
-    gunRig.rotation.set(P.recoil * 0.22 + rel * 0.5, 0.1, rel * 0.9);
-    gun.userData.drum.rotation.y += rel > 0.1 ? rdt * 18 : 0;
+    if (vmp.crane) { // modelled gun: roll left, swing the cylinder out on the crane, spin it, swing it home
+      gunRig.rotation.set(P.recoil * 0.3 + rel * 0.35, P.vmGLB ? 0 : 0.1, rel * 0.75);
+      vmp.crane.rotation.z = Math.min(1, rel * 1.8) * 1.3;
+      vmp.drum.rotation.z += rel > 0.3 ? rdt * 16 : 0;
+    } else {
+      gunRig.rotation.set(P.recoil * 0.22 + rel * 0.5, 0.1, rel * 0.9);
+      vmp.drum.rotation.y += rel > 0.1 ? rdt * 18 : 0;
+    }
     flashT -= rdt; if (flashT <= 0) { flashSpr.visible = false; vmFlash.intensity = 0; }
     const lit = !!(P.litT > 0 || P.focusT > 0 || P.forceCig);
     cigRig.visible = lit && (live || P.forceCig);
-    if (lit) { const k = P.focusT > 0 ? 0.04 : 0; cigRig.position.set(CIG_HOME.x, CIG_HOME.y + k + Math.sin(P.bob * 0.5 + 1) * 0.006, CIG_HOME.z); emberGlow.material.opacity = 0.7 + Math.sin(NR.core.time * 9) * 0.3; }
+    if (lit) { const k = P.focusT > 0 ? 0.04 : 0; cigRig.position.set(CIG_HOME.x, CIG_HOME.y + k + Math.sin(P.bob * 0.5 + 1) * 0.006, CIG_HOME.z); emberGlow.material.opacity = 0.26 + Math.sin(NR.core.time * 9) * 0.08; }
   };
   P.reset = () => { P.rounds = C.GUN_ROUNDS; P.reloadT = 0; P.fireCd = 0; P.recoil = 0; P.litT = 0; P.focusT = 0; P.resetHealth(); };
 })();

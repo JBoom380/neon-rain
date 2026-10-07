@@ -4,6 +4,7 @@
   const canvas = document.getElementById('game');
   const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   const settings = Object.assign({ bw: true, music: 0.6, sfx: 0.8, quality: isTouch ? 'low' : 'high', sens: 1 }, load(C.SETTINGS_KEY));
+  if (settings.film !== 'bwred') settings.film = 'noir'; settings.bw = settings.film === 'bwred'; // FILM: noir colour (default) or B&W with red kept
   { const q = new URLSearchParams(location.search).get('chars'); if (q === '3d' || q === 'painted') settings.chars = q; if (settings.chars !== '3d') settings.chars = 'painted'; } // CHARACTERS: painted (default) or 3d
   function load(k) { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch (e) { return {}; } }
 
@@ -32,14 +33,25 @@
         vec3 col = texture2D(tCol, vUv).rgb;
         if (shaftOn > 0.5) { vec2 px = 2.0/res; float sh = texture2D(tShaft, vUv).r*0.36 + (texture2D(tShaft, vUv+vec2(px.x,px.y)).r + texture2D(tShaft, vUv+vec2(-px.x,px.y)).r + texture2D(tShaft, vUv+vec2(px.x,-px.y)).r + texture2D(tShaft, vUv-px).r)*0.16;
           col += shaftCol * sh * shaftK; }
+        if (bw < 0.5) { vec2 px = 1.0/res; vec3 hal = vec3(0.0);
+          for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398; vec2 o = vec2(cos(a), sin(a)) * px * (9.0 + 9.0 * mod(float(i), 2.0));
+            vec3 c2 = texture2D(tCol, vUv + o).rgb; hal += max(c2 - 0.9, 0.0); }
+          col += hal * vec3(1.0, 0.55, 0.32) * 0.09; }
         col = aces(col * expo); col = pow(col, vec3(1./2.2));
         float l = dot(col, vec3(0.299,0.587,0.114));
         float mx=max(col.r,max(col.g,col.b)), mn=min(col.r,min(col.g,col.b)); float sat=(mx-mn)/(mx+1e-4);
         float red = smoothstep(0.28,0.5,sat)*smoothstep(0.02,0.1,col.r-max(col.g,col.b))*smoothstep(0.42,0.3,col.g/(col.r+1e-3));
         red = max(red, clamp(1.0 - texture2D(tCol, vUv).a, 0.0, 1.0)); // sprites flag their painted reds through alpha
         if (bw > 0.5) { vec3 g = vec3(pow(l,1.08)); col = mix(g, col*vec3(1.1,0.9,0.9), clamp(red*1.4,0.,1.)); }
-        else { col = mix(vec3(l), col, 0.6+0.4*red); col *= vec3(0.98,1.0,1.04); }
-        col = smoothstep(vec3(0.03), vec3(1.0), col);
+        else { // NOIR COLOR: grey, cool shadows; warm sodium/incandescent amber, reds and neon teal-green stay saturated
+          float hr = col.r - col.b, hg = col.g - col.r;
+          float warm = smoothstep(0.06, 0.2, hr) * smoothstep(0.22, 0.45, sat) * smoothstep(0.05, 0.22, mx);              // red..amber..orange
+          float teal = smoothstep(0.03, 0.12, hg + (col.b - col.r) * 0.5) * smoothstep(0.25, 0.45, sat) * smoothstep(0.25, 0.5, mx); // neon teal / green
+          float keep = clamp(max(max(warm, teal), red * smoothstep(0.03, 0.12, mx)), 0.0, 1.0);
+          vec3 grey = vec3(l) * mix(vec3(0.86, 0.95, 1.1), vec3(1.0, 0.98, 0.95), smoothstep(0.05, 0.6, l)); // cool shadows, neutral highlights
+          vec3 vivid = mix(vec3(l), col, 1.25);                                               // slight saturation boost on kept hues
+          col = mix(grey, vivid, keep * 0.92); col = max(col, 0.0); }
+        col = smoothstep(vec3(0.035), vec3(1.0), col); // deep blacks
         // scan: amber wash + scanlines
         col = mix(col, col*vec3(1.25,0.95,0.55) + vec3(0.03,0.02,0.0), scan*0.6);
         col *= 1.0 - scan*0.08*step(0.5, fract(gl_FragCoord.y*0.25));

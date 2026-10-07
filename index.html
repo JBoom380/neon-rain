@@ -81002,7 +81002,8 @@ NR.cfg = {
   SETTINGS_KEY: 'neonRainFps.settings', CASE_KEY: 'neonRainFps.case',
 };
 NR.ASSET = document.querySelector('script[src="config.js"]') ? '../assets/' : 'assets/'; // dev.html lives in src/
-NR.RAIN = { office: [['rain_05_int_window_close', 1.0]], alley: [['rain_13_ext_alley_gutter', 0.9], ['rain_10_ext_heavy_downpour', 0.6]], club: [['rain_09_int_heavy_rain_through_walls', 1.0]] }; // ambience per scene
+NR.RAIN = { office: [['rain_05_int_window_close', 2.0]], alley: [['rain_13_ext_alley_gutter', 0.9], ['rain_10_ext_heavy_downpour', 0.6]], club: [['rain_09_int_heavy_rain_through_walls', 2.0]] }; // ambience per scene
+NR.RAIN.club.lp = 1000; NR.RAIN.office.lp = 2000; NR.RAIN.alley.lp = 2400; // muffled rain: lowpass cutoff per scene
 NR.SPRITE = (who, name) => NR.ASSET + 'sprites/' + who + '_' + name + '.webp';
 NR.CLOSE = (who, mood) => NR.ASSET + 'sprites/' + who + '_close_' + mood + '.jpg';
 NR.rng = (seed) => { let s = (seed >>> 0) || 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
@@ -81020,6 +81021,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const canvas = document.getElementById('game');
   const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   const settings = Object.assign({ bw: true, music: 0.6, sfx: 0.8, quality: isTouch ? 'low' : 'high', sens: 1 }, load(C.SETTINGS_KEY));
+  if (settings.film !== 'bwred') settings.film = 'noir'; settings.bw = settings.film === 'bwred'; // FILM: noir colour (default) or B&W with red kept
   { const q = new URLSearchParams(location.search).get('chars'); if (q === '3d' || q === 'painted') settings.chars = q; if (settings.chars !== '3d') settings.chars = 'painted'; } // CHARACTERS: painted (default) or 3d
   function load(k) { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch (e) { return {}; } }
 
@@ -81048,14 +81050,25 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
         vec3 col = texture2D(tCol, vUv).rgb;
         if (shaftOn > 0.5) { vec2 px = 2.0/res; float sh = texture2D(tShaft, vUv).r*0.36 + (texture2D(tShaft, vUv+vec2(px.x,px.y)).r + texture2D(tShaft, vUv+vec2(-px.x,px.y)).r + texture2D(tShaft, vUv+vec2(px.x,-px.y)).r + texture2D(tShaft, vUv-px).r)*0.16;
           col += shaftCol * sh * shaftK; }
+        if (bw < 0.5) { vec2 px = 1.0/res; vec3 hal = vec3(0.0);
+          for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398; vec2 o = vec2(cos(a), sin(a)) * px * (9.0 + 9.0 * mod(float(i), 2.0));
+            vec3 c2 = texture2D(tCol, vUv + o).rgb; hal += max(c2 - 0.9, 0.0); }
+          col += hal * vec3(1.0, 0.55, 0.32) * 0.09; }
         col = aces(col * expo); col = pow(col, vec3(1./2.2));
         float l = dot(col, vec3(0.299,0.587,0.114));
         float mx=max(col.r,max(col.g,col.b)), mn=min(col.r,min(col.g,col.b)); float sat=(mx-mn)/(mx+1e-4);
         float red = smoothstep(0.28,0.5,sat)*smoothstep(0.02,0.1,col.r-max(col.g,col.b))*smoothstep(0.42,0.3,col.g/(col.r+1e-3));
         red = max(red, clamp(1.0 - texture2D(tCol, vUv).a, 0.0, 1.0)); // sprites flag their painted reds through alpha
         if (bw > 0.5) { vec3 g = vec3(pow(l,1.08)); col = mix(g, col*vec3(1.1,0.9,0.9), clamp(red*1.4,0.,1.)); }
-        else { col = mix(vec3(l), col, 0.6+0.4*red); col *= vec3(0.98,1.0,1.04); }
-        col = smoothstep(vec3(0.03), vec3(1.0), col);
+        else { // NOIR COLOR: grey, cool shadows; warm sodium/incandescent amber, reds and neon teal-green stay saturated
+          float hr = col.r - col.b, hg = col.g - col.r;
+          float warm = smoothstep(0.06, 0.2, hr) * smoothstep(0.22, 0.45, sat) * smoothstep(0.05, 0.22, mx);              // red..amber..orange
+          float teal = smoothstep(0.03, 0.12, hg + (col.b - col.r) * 0.5) * smoothstep(0.25, 0.45, sat) * smoothstep(0.25, 0.5, mx); // neon teal / green
+          float keep = clamp(max(max(warm, teal), red * smoothstep(0.03, 0.12, mx)), 0.0, 1.0);
+          vec3 grey = vec3(l) * mix(vec3(0.86, 0.95, 1.1), vec3(1.0, 0.98, 0.95), smoothstep(0.05, 0.6, l)); // cool shadows, neutral highlights
+          vec3 vivid = mix(vec3(l), col, 1.25);                                               // slight saturation boost on kept hues
+          col = mix(grey, vivid, keep * 0.92); col = max(col, 0.0); }
+        col = smoothstep(vec3(0.035), vec3(1.0), col); // deep blacks
         // scan: amber wash + scanlines
         col = mix(col, col*vec3(1.25,0.95,0.55) + vec3(0.03,0.02,0.0), scan*0.6);
         col *= 1.0 - scan*0.08*step(0.5, fract(gl_FragCoord.y*0.25));
@@ -81577,6 +81590,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     glow(0xe0eaff, 0.8, 1.0, RH - 0.15, -11.5, S);
     L.sideLight = { ambient: 0x606070, key: 0xe8f0ff, warm: 0x5a2010 };
     if (NR.fx) { S.add(NR.fx.smoke(90, V3(-0.5, 0.8, -12), { rise: 2.6, spread: 4.0, size: 420, alpha: 0.03, life: 34 }, L.shaft)); }
+    L.signLight = new T.PointLight(0xff2a14, 0, 18, 1.2); L.signLight.position.set(0.6, 3.8, -10.5); S.add(L.signLight); // the title sign's red cast
     L.spawn = { pos: V3(0, 0, -0.6), yaw: 0 };
     L.doloresPos = V3(5.6, 0, -16.6);
     L.finish(); return L;
@@ -81613,9 +81627,13 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     part(new T.BoxGeometry(0.03, 0.085, 0.034), wood, 0, -0.045, 0.065, 0.35);                    // grip
     const tg = part(new T.TorusGeometry(0.015, 0.003, 5, 10, Math.PI), blued, 0, -0.012, 0.012, 0, Math.PI / 2, Math.PI); void tg;
     g.userData.drum = drum; g.userData.inner = inner;
-    if (lying) inner.rotation.x = 0;
+    if (lying) { inner.rotation.x = 0; if (revAsset) swapRevolver(g); else lyingGuns.push(g); }
     return g;
   }
+  // the modelled revolver (assets/models/vm_revolver.glb, loaded by player.js) replaces the code model on desks/props
+  let revAsset = null; const lyingGuns = [];
+  function swapRevolver(g) { const m = revAsset.clone(true); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); g.userData.inner.visible = false; g.add(m); }
+  function useRevolverAsset(node) { revAsset = node; for (const g of lyingGuns.splice(0)) swapRevolver(g); }
   function hatModel(color) {
     const hat = new T.Group(); const m = new T.MeshLambertMaterial({ color });
     const brimPts = []; for (let i = 0; i <= 6; i++) { const r = 0.11 + i * 0.0165; brimPts.push(new T.Vector2(r, 0.008 + 0.012 * Math.pow(i / 6, 2))); }
@@ -81767,14 +81785,15 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     if (flashT > 0) { flashT -= rdt; if (flashT <= 0) flashLight.intensity = 0; }
   }
 
-  NR.fx = { U, revolverModel, hatModel, smoke, rain, attach, blood, impact, pool, tracer, muzzle, update, BLOOD, canvasTex };
+  NR.fx = { U, revolverModel, useRevolverAsset, hatModel, smoke, rain, attach, blood, impact, pool, tracer, muzzle, update, BLOOD, canvasTex };
 })();
 
 </script>
 <script>/* gltf.js */
 // NEON RAIN minimal GLB loader (the three r186 global build has no GLTFLoader): node tree, meshes, PBR materials
 // (base colour, textures, alpha blend), skins (SkinnedMesh + Skeleton) and animations (AnimationClip). Enough for the
-// character GLBs exported from Blender; no sparse accessors, no byte strides, no Draco.
+// character GLBs exported from Blender, plus the baked environment GLBs (TEXCOORD_1, emissive maps, material and scene
+// extras); no sparse accessors, no byte strides, no Draco.
 (function () {
   const T = THREE;
   const TA = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array, 5121: Uint8Array, 5122: Int16Array, 5120: Int8Array };
@@ -81794,6 +81813,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
         metalness: pb.metallicFactor == null ? 1 : pb.metallicFactor, roughness: pb.roughnessFactor == null ? 1 : pb.roughnessFactor,
         map: tex(pb.baseColorTexture, true), side: md.doubleSided ? T.DoubleSide : T.FrontSide });
       if (md.emissiveFactor) m.emissive.setRGB(...md.emissiveFactor, T.LinearSRGBColorSpace);
+      if (md.emissiveTexture) { m.emissiveMap = tex(md.emissiveTexture, true); m.userData.emissiveTexCoord = md.emissiveTexture.texCoord || 0; } // env GLBs: texCoord 1 = baked lightmap
+      m.userData.extras = md.extras || {}; if (pb.baseColorTexture) m.userData.mapTexCoord = pb.baseColorTexture.texCoord || 0;
       if (md.extensions && md.extensions.KHR_materials_emissive_strength) m.emissiveIntensity = md.extensions.KHR_materials_emissive_strength.emissiveStrength;
       if (md.alphaMode === 'BLEND') { m.transparent = true; m.depthWrite = false; m.alphaTest = 0.08; }
       if (md.alphaMode === 'MASK') m.alphaTest = md.alphaCutoff == null ? 0.5 : md.alphaCutoff;
@@ -81807,7 +81828,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       if (n.mesh === undefined) return;
       for (const p of json.meshes[n.mesh].primitives) {
         const g = new T.BufferGeometry(), A = p.attributes;
-        g.setAttribute('position', attr(A.POSITION)); if (A.NORMAL !== undefined) g.setAttribute('normal', attr(A.NORMAL)); if (A.TEXCOORD_0 !== undefined) g.setAttribute('uv', attr(A.TEXCOORD_0));
+        g.setAttribute('position', attr(A.POSITION)); if (A.NORMAL !== undefined) g.setAttribute('normal', attr(A.NORMAL)); if (A.TEXCOORD_0 !== undefined) g.setAttribute('uv', attr(A.TEXCOORD_0)); if (A.TEXCOORD_1 !== undefined) g.setAttribute('uv1', attr(A.TEXCOORD_1));
         if (A.JOINTS_0 !== undefined) g.setAttribute('skinIndex', attr(A.JOINTS_0)); if (A.WEIGHTS_0 !== undefined) g.setAttribute('skinWeight', attr(A.WEIGHTS_0));
         if (p.indices !== undefined) g.setIndex(attr(p.indices));
         if (A.NORMAL === undefined) g.computeVertexNormals();
@@ -81832,14 +81853,498 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       }
       return new T.AnimationClip(a.name, -1, tracks);
     });
-    return { scene: root, animations: clips, materials: mats };
+    return { scene: root, animations: clips, materials: mats, extras: json.scenes[json.scene || 0].extras || {} };
   }
   NR.gltf = { load };
 })();
 
 </script>
+<script>/* cast.js */
+// NEON RAIN cast: rigged, animated 3D people (alley thugs, Gale's men, the artificial man, Miles Corran).
+// Extends NR.gltf with a parse-once / instance-many loader for the skinned family GLBs (shared skeleton, shared
+// geometry, materials and clips; one Skeleton + AnimationMixer per instance), and NR.cast.Rig: two animation layers
+// (lower body / upper body) with crossfades, one-shot full-body clips, additive recoil and hit reactions, aim pitch, LOD.
+(function () {
+  const T = THREE;
+  const TA = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array, 5121: Uint8Array, 5122: Int16Array, 5120: Int8Array };
+  const NC = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+  const clean = (n) => T.PropertyBinding.sanitizeNodeName(n || '');
+  const LOWER = new Set(['spine', 'thigh_L', 'shin_L', 'foot_L', 'toe_L', 'thigh_R', 'shin_R', 'foot_R', 'toe_R']);
+
+  // noir character shading: a faint amber rim keeps silhouettes off the black, and deep reds (ties, blood) keep colour
+  // through the B&W grade (alpha < 1 marks them for the post pass, as on Vela)
+  function charMaterial(m) {
+    m.side = T.DoubleSide; m.shadowSide = T.BackSide; // cloth shells are open (hems, cuffs, coat skirts): show their insides too; back faces cast (no acne)
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uRim = { value: new T.Color(0xffa24a).multiplyScalar(0.16) };
+      sh.fragmentShader = 'uniform vec3 uRim;\n' + sh.fragmentShader.replace('#include <opaque_fragment>',
+        'outgoingLight += uRim * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);\n#include <opaque_fragment>\n' +
+        ' float rq = diffuseColor.r / max(0.004, max(diffuseColor.g, diffuseColor.b)); gl_FragColor.a = 1.0 - smoothstep(4.0, 7.0, rq) * smoothstep(0.02, 0.05, diffuseColor.r) * 0.95;');
+    };
+    m.customProgramCacheKey = () => 'nrCast'; m.needsUpdate = true;
+  }
+
+  async function template(url) {
+    const buf = await (await fetch(url)).arrayBuffer();
+    const dv = new DataView(buf); let off = 12, json = null, bin = null;
+    while (off < buf.byteLength) { const len = dv.getUint32(off, true), type = dv.getUint32(off + 4, true); const chunk = buf.slice(off + 8, off + 8 + len); if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(chunk)); else bin = chunk; off += 8 + len; }
+    const arr = (i) => { const a = json.accessors[i], bv = json.bufferViews[a.bufferView], C = TA[a.componentType], n = NC[a.type]; const start = (bv.byteOffset || 0) + (a.byteOffset || 0); return { array: new C(bin.slice(start, start + a.count * n * C.BYTES_PER_ELEMENT)), n, norm: !!a.normalized }; };
+    const attr = (i) => { const r = arr(i); return new T.BufferAttribute(r.array, r.n, r.norm); };
+    const images = await Promise.all((json.images || []).map(async (im) => { const bv = json.bufferViews[im.bufferView]; return createImageBitmap(new Blob([bin.slice(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength)], { type: im.mimeType }), { imageOrientation: 'none' }); }));
+    const texCache = {};
+    const tex = (info, srgb) => { if (!info) return null; const src = json.textures[info.index].source, k = src + (srgb ? 's' : 'l'); if (!texCache[k]) { const t = new T.Texture(images[src]); t.flipY = false; t.colorSpace = srgb ? T.SRGBColorSpace : T.NoColorSpace; t.anisotropy = 4; t.needsUpdate = true; texCache[k] = t; } return texCache[k]; };
+    const mats = (json.materials || []).map(md => {
+      const pb = md.pbrMetallicRoughness || {}, f = pb.baseColorFactor || [1, 1, 1, 1];
+      const m = new T.MeshStandardMaterial({ name: md.name, color: new T.Color().setRGB(f[0], f[1], f[2], T.LinearSRGBColorSpace),
+        metalness: pb.metallicFactor == null ? 1 : pb.metallicFactor, roughness: pb.roughnessFactor == null ? 1 : pb.roughnessFactor, map: tex(pb.baseColorTexture, true) });
+      if (pb.metallicRoughnessTexture) { m.roughnessMap = m.metalnessMap = tex(pb.metallicRoughnessTexture, false); }
+      if (md.normalTexture) { m.normalMap = tex(md.normalTexture, false); const s = md.normalTexture.scale || 1; m.normalScale.set(s, -s); }
+      charMaterial(m);
+      return m;
+    });
+    const geos = {};
+    const geo = (mi, pi) => {
+      const k = mi + ':' + pi; if (geos[k]) return geos[k];
+      const p = json.meshes[mi].primitives[pi], g = new T.BufferGeometry(), A = p.attributes;
+      g.setAttribute('position', attr(A.POSITION)); if (A.NORMAL !== undefined) g.setAttribute('normal', attr(A.NORMAL)); if (A.TEXCOORD_0 !== undefined) g.setAttribute('uv', attr(A.TEXCOORD_0));
+      if (A.JOINTS_0 !== undefined) g.setAttribute('skinIndex', attr(A.JOINTS_0)); if (A.WEIGHTS_0 !== undefined) g.setAttribute('skinWeight', attr(A.WEIGHTS_0));
+      if (p.indices !== undefined) g.setIndex(attr(p.indices));
+      if (A.NORMAL === undefined) g.computeVertexNormals();
+      g.computeBoundingSphere();
+      return (geos[k] = { g, mat: p.material });
+    };
+    const names = json.nodes.map(n => clean(n.name));
+    const joints = new Set(); (json.skins || []).forEach(s => s.joints.forEach(j => joints.add(j)));
+    const inv = (json.skins || []).map(s => { const ib = arr(s.inverseBindMatrices).array; return s.joints.map((_, k) => new T.Matrix4().fromArray(ib, k * 16)); });
+    const clips = {};
+    for (const a of json.animations || []) {
+      const tracks = [];
+      for (const ch of a.channels) {
+        const s = a.samplers[ch.sampler], path = { translation: 'position', rotation: 'quaternion', scale: 'scale' }[ch.target.path];
+        if (!path || s.interpolation === 'CUBICSPLINE') continue;
+        const TT = path === 'quaternion' ? T.QuaternionKeyframeTrack : T.VectorKeyframeTrack;
+        tracks.push(new TT(names[ch.target.node] + '.' + path, Array.from(arr(s.input).array), Array.from(arr(s.output).array)));
+      }
+      clips[a.name] = new T.AnimationClip(a.name, -1, tracks);
+    }
+    const rigNode = json.nodes.find(n => n.extras && n.extras.nr_anims);
+    const meta = rigNode ? { anims: JSON.parse(rigNode.extras.nr_anims), cast: JSON.parse(rigNode.extras.nr_cast) } : { anims: {}, cast: {} };
+    // layer splits and additive versions, made once per family
+    const sub = {};
+    for (const [n, c] of Object.entries(clips)) {
+      const bone = (tr) => tr.name.split('.')[0];
+      const ex = meta.anims[n] || {};
+      if (ex.additive) { const add = T.AnimationUtils.makeClipAdditive(c.clone()); add.tracks = add.tracks.filter(tr => tr.name.indexOf('.position') < 0); sub[n] = { A: add }; continue; }
+      if (/^die_/.test(n)) { // keep half of the slide in the falls so bodies stay near where they dropped
+        const tr = c.tracks.find(t => t.name === 'spine.position');
+        if (tr) { const v = tr.values, x0 = v[0], z0 = v[2]; for (let i = 0; i < v.length; i += 3) { v[i] = x0 + (v[i] - x0) * 0.55; v[i + 2] = z0 + (v[i + 2] - z0) * 0.55; } }
+      }
+      sub[n] = { L: new T.AnimationClip(n + '_L', c.duration, c.tracks.filter(t => LOWER.has(bone(t)))),
+                 U: new T.AnimationClip(n + '_U', c.duration, c.tracks.filter(t => !LOWER.has(bone(t)))) };
+    }
+    return { json, names, joints, inv, mats, geo, clips, sub, meta };
+  }
+
+  function instance(tpl, keep) {
+    const { json, names } = tpl;
+    const nodes = json.nodes.map((n, i) => { const o = tpl.joints.has(i) ? new T.Bone() : new T.Group(); o.name = names[i]; if (n.matrix) new T.Matrix4().fromArray(n.matrix).decompose(o.position, o.quaternion, o.scale); if (n.translation) o.position.fromArray(n.translation); if (n.rotation) o.quaternion.fromArray(n.rotation); if (n.scale) o.scale.fromArray(n.scale); return o; });
+    json.nodes.forEach((n, i) => { for (const c of n.children || []) if (keep(names[c])) nodes[i].add(nodes[c]); });
+    const byName = {}; nodes.forEach(o => { byName[o.name] = o; });
+    const skinned = [];
+    json.nodes.forEach((n, i) => {
+      if (n.mesh === undefined || !keep(names[i])) return;
+      json.meshes[n.mesh].primitives.forEach((p, pi) => {
+        const { g, mat } = tpl.geo(n.mesh, pi), material = tpl.mats[mat] || new T.MeshStandardMaterial();
+        const m = n.skin !== undefined && g.attributes.skinIndex ? new T.SkinnedMesh(g, material) : new T.Mesh(g, material);
+        m.name = names[i] + '_mesh'; m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; nodes[i].add(m);
+        if (m.isSkinnedMesh) skinned.push([m, n.skin]);
+      });
+    });
+    const root = new T.Group(); for (const i of json.scenes[json.scene || 0].nodes) if (keep(names[i])) root.add(nodes[i]);
+    root.updateMatrixWorld(true);
+    const skels = {};
+    for (const [m, si] of skinned) {
+      if (!skels[si]) skels[si] = new T.Skeleton(json.skins[si].joints.map(j => nodes[j]), tpl.inv[si]);
+      m.bind(skels[si], new T.Matrix4());
+    }
+    return { root, nodes: byName };
+  }
+
+  const tplCache = {};
+  function family(url) { if (!tplCache[url]) { tplCache[url] = template(url); tplCache[url].then(t => { tplCache[url].done = t; }, e => { console.warn('[cast] ' + url + ' failed', e); }); } return tplCache[url]; }
+
+  const URL = { thugs: 'models/cast/thugs.glb', gale: 'models/cast/gale.glb', synth: 'models/cast/synth.glb', miles: 'models/cast/miles.glb' };
+  const FAMILY = { thug_a: 'thugs', thug_b: 'thugs', thug_c: 'thugs', gale_a: 'gale', gale_b: 'gale', gale_c: 'gale', synth: 'synth', miles: 'miles' };
+  const VARIANTS = Object.keys(FAMILY);
+  function preload(fams) { for (const f of fams || Object.keys(URL)) family(NR.ASSET + URL[f]); }
+  function ready(variant) { const p = tplCache[NR.ASSET + URL[FAMILY[variant]]]; return p && p.done ? p.done : null; }
+
+  const WEAPONS = ['pistol', 'tommy', 'knife', 'flashlight'];
+  class Rig {
+    constructor(tpl, variant) {
+      this.variant = variant; this.tpl = tpl;
+      const own = (n) => VARIANTS.some(v => n === v || n.startsWith(v + '_'));
+      const inst = instance(tpl, n => !own(n) || n === variant || n.startsWith(variant + '_'));
+      this.root = inst.root; this.nodes = inst.nodes;
+      this.lod0 = this.nodes[variant]; this.lod1 = this.nodes[variant + '_lod1']; if (this.lod1) this.lod1.visible = false;
+      this.weapons = WEAPONS.filter(w => this.nodes[variant + '_' + w]);
+      const main = this.weapons.find(w => w !== 'flashlight') || null;
+      this.kind = main === 'knife' ? (this.weapons.includes('flashlight') ? 'knife_lamp' : 'knife') : main || 'none';
+      this.muzzle = main ? this.nodes[variant + '_' + main + '_muzzle'] : null;
+      this.lampTip = this.nodes[variant + '_flashlight_muzzle'] || null;
+      this.hat = this.nodes[variant + '_hat'] || null;
+      const B = (n) => this.nodes[n];
+      this.bones = { hips: B('spine'), spine2: B('spine_002'), chest: B('spine_003'), head: B('spine_006'), handR: B('hand_R'), handL: B('hand_L'), thighL: B('thigh_L'), thighR: B('thigh_R') };
+      this.mixer = new T.AnimationMixer(this.root);
+      this.acts = {}; this.layer = { L: null, U: null }; this.layerName = { L: '', U: '' };
+      this.speedOf = (n) => ((tpl.meta.anims[n] || {}).speed) || 1;
+      this.play('L', 'idle', 0); this.play('U', 'idle', 0);
+      this.mixer.update(Math.random() * 3);
+    }
+    has(n) { return !!this.tpl.sub[n]; }
+    action(n, part) {
+      const k = n + '|' + part; if (this.acts[k]) return this.acts[k];
+      const s = this.tpl.sub[n]; if (!s || !s[part]) return null;
+      const a = this.mixer.clipAction(s[part]);
+      if (part === 'A') a.blendMode = T.AdditiveAnimationBlendMode;
+      return (this.acts[k] = a);
+    }
+    play(part, n, fade = 0.25, once = false, timeScale = 1) {
+      if (this.layerName[part] === n && !once) { if (this.layer[part]) this.layer[part].timeScale = timeScale; return; }
+      const a = this.action(n, part); if (!a) return;
+      a.reset(); a.enabled = true; a.setEffectiveTimeScale(timeScale); a.setEffectiveWeight(1);
+      if (once) { a.setLoop(T.LoopOnce, 1); a.clampWhenFinished = true; } else a.setLoop(T.LoopRepeat, Infinity);
+      if (this.layer[part] && this.layer[part] !== a && fade > 0) { a.crossFadeFrom(this.layer[part], fade, false); } else if (this.layer[part] && this.layer[part] !== a) this.layer[part].stop();
+      a.play(); this.layer[part] = a; this.layerName[part] = n;
+    }
+    full(n, fade = 0.15, once = true, timeScale = 1) { this.play('L', n, fade, once, timeScale); this.play('U', n, fade, once, timeScale); }
+    additive(n, weight = 1) { const a = this.action(n, 'A'); if (!a) return; a.reset(); a.setLoop(T.LoopOnce, 1); a.clampWhenFinished = false; a.setEffectiveWeight(weight); a.play(); }
+    // rotate a bone in world space after the mixer (aim pitch)
+    bend(bone, axis, ang) {
+      if (!bone || !ang) return;
+      const pw = new T.Quaternion(), bw = new T.Quaternion();
+      bone.parent.getWorldQuaternion(pw); bone.getWorldQuaternion(bw);
+      const q = new T.Quaternion().setFromAxisAngle(axis, ang).multiply(bw);
+      bone.quaternion.copy(pw.invert().multiply(q)); bone.updateMatrixWorld(true);
+    }
+    lod(far) { if (!this.lod1) return; this.lod0.visible = !far; this.lod1.visible = far; }
+    update(dt) { this.mixer.update(dt); this.root.updateMatrixWorld(true); }
+  }
+
+  NR.gltf = NR.gltf || {}; NR.gltf.template = template; NR.gltf.instance = instance;
+  NR.cast = { Rig, family, preload, ready, URL, FAMILY, LOWER };
+})();
+
+</script>
+<script>/* env.js */
+// NEON RAIN environment pass: the three slice sets as baked Blender scenes (assets/models/env_*.glb, built by
+// tools/env/*.py). Film lighting is baked: the room shell is tiled albedo x lightmap (UV2), props and dynamic pieces are
+// baked albedo x light atlases, all unlit on the phone. Real-time on top: the cookie spot (stripes on the characters,
+// half-res light shafts), rain on the glass, smoke, neon flicker, the door and the fan. Colliders come from the GLB.
+// Replaces NR.world.build.<level> for every level listed in FILES; the grey-box builders stay as the fallback.
+(function () {
+  const T = THREE, W = NR.world, V3 = W.V3;
+  const FILES = { club: 'models/env_club.glb', office: 'models/env_office.glb', alley: 'models/env_alley.glb' };
+  const ON = (new URLSearchParams(location.search).get('env') || 'baked') !== 'grey';
+  NR.cfg.EYE = 1.65; // standing eye height (metres)
+
+  // ---------------------------------------------------------------- loading (club first: it is the title backdrop)
+  const cache = {}, ready = {};
+  function get(name) {
+    if (!cache[name]) cache[name] = NR.gltf.load(NR.ASSET + FILES[name]).catch(e => { console.warn('[env] ' + name + ' GLB failed, using the grey-box set', e); return null; });
+    return cache[name];
+  }
+  NR.env = { ready, files: FILES, exposure: 1.0 };
+
+  // GLB materials -> phone materials (unlit, baked)
+  function phoneMats(root, opts) {
+    const neon = [];
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = false; o.receiveShadow = false; o.frustumCulled = true; o.matrixAutoUpdate = true;
+      const m = o.material, x = (m.userData && m.userData.extras) || {};
+      let n = null;
+      if (x.lm != null && m.emissiveMap) {
+        const lmTex = m.emissiveMap; lmTex.channel = 1;
+        const tint = x.tint || [1, 1, 1];
+        n = new T.MeshBasicMaterial({ map: m.map, lightMap: lmTex, lightMapIntensity: x.lm * Math.PI * NR.env.exposure * (opts.lm || 1), color: new T.Color(tint[0], tint[1], tint[2]) });
+        if (m.map) m.map.channel = 0;
+      } else if (x.baked != null) {
+        const k = x.baked * NR.env.exposure * (opts.baked || 1);
+        n = new T.MeshBasicMaterial({ map: m.map, color: new T.Color(k, k, k) });
+      } else if (/^NEON/.test(m.name)) {
+        const c = m.emissive.clone().multiplyScalar((m.emissiveIntensity || 1) * (opts.neon || 1));
+        n = new T.MeshBasicMaterial({ color: c, fog: false }); n.userData.base = c.clone(); neon.push({ mesh: o, mat: n, ph: Math.random() * 10 });
+      } else if (/^GLOW/.test(m.name)) {
+        n = new T.MeshBasicMaterial({ color: m.emissive.clone().multiplyScalar(m.emissiveIntensity || 1), map: m.emissiveMap || m.map || null, transparent: true, blending: T.AdditiveBlending, depthWrite: false, fog: false });
+      } else if (/^MIRROR|^WET/.test(m.name)) {
+        n = m; n.userData.keep = true;
+      }
+      if (n) { n.name = m.name; o.material = n; m.dispose(); }
+      if (n && m.map && n.map) { n.map.anisotropy = 8; }
+    });
+    return neon;
+  }
+  // colliders from the GLB scene extras, then the level's cover points
+  function addColliders(L, extras) {
+    let list = []; try { list = JSON.parse(extras.colliders || '[]'); } catch (e) { console.warn('[env] colliders', e); }
+    for (const c of list) L.boxes.push({ min: V3(...c.min), max: V3(...c.max), cover: !!c.cover, step: !!c.step, tag: c.tag || '' });
+    L.covers = []; L.finish();
+  }
+  function node(root, name) { let r = null; root.traverse(o => { if (!r && o.name === name) r = o; }); return r; }
+
+  // attach a loaded GLB to a level (now, or when it arrives)
+  function attach(L, name, onReady, opts = {}) {
+    L.envReady = false;
+    ready[name] = get(name).then(g => {
+      if (!g) { // network failure: fall back to the grey-box geometry so the beat stays playable
+        const F = NR.env.orig && NR.env.orig[name] && NR.env.orig[name](NR.core.settings.quality);
+        if (F) { for (const c of [...F.scene.children]) if (c.isMesh) L.scene.add(c); L.boxes.push(...F.boxes.filter(b => b.tag !== 'door')); L.covers = []; L.finish(); }
+        return false;
+      }
+      const neon = phoneMats(g.scene, opts);
+      L.scene.add(g.scene); L.env = g.scene; addColliders(L, g.extras);
+      L.neon = neon;
+      if (neon.length) L.updaters.push((dt, t) => { for (const n of neon) { const f = n.mesh.userData.flicker || 0.05; const k = 1 - f * (0.5 + 0.5 * Math.sin(t * 23 + n.ph)) * (Math.sin(t * 1.7 + n.ph * 3) > 0.92 ? 6 : 1); n.mat.color.copy(n.mat.userData.base).multiplyScalar(Math.max(0.15, k)); } });
+      if (onReady) onReady(g.scene);
+      L.envReady = true; if (NR.core && NR.core.scene === L.scene) NR.core.renderer.shadowMap.needsUpdate = true;
+      return true;
+    });
+    return ready[name];
+  }
+
+  // a sodium-lit city through the window: dark masses, warm windows, a few distant neon signs in the haze
+  function cityTex(w, h, seed, opts = {}) {
+    const rnd = NR.rng(seed);
+    return W.tex(w, h, (g) => {
+      const sky = g.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, '#05040a'); sky.addColorStop(0.55, '#1a0d08'); sky.addColorStop(1, '#3a1a08');
+      g.fillStyle = sky; g.fillRect(0, 0, w, h);
+      for (let layer = 0; layer < 3; layer++) {
+        let x = -20; const base = h * (0.32 + layer * 0.12), dark = [16, 10, 5][layer];
+        while (x < w) {
+          const bw = 40 + rnd() * 110, bh = base + rnd() * h * 0.25; const top = h - bh;
+          g.fillStyle = `rgb(${dark + 6},${dark + 2},${dark})`; g.fillRect(x, top, bw, bh);
+          if (rnd() < 0.4) { g.fillRect(x + bw * 0.4, top - 18 - rnd() * 30, 4, 40); }
+          for (let yy = top + 8; yy < h - 6; yy += 13 - layer * 2) for (let xx = x + 5; xx < x + bw - 6; xx += 10 - layer * 2) {
+            if (rnd() < 0.2 + layer * 0.08) { const a = (0.25 + rnd() * 0.6) * (0.5 + layer * 0.25); const warm = rnd() < 0.85;
+              g.fillStyle = warm ? `rgba(255,${120 + rnd() * 60 | 0},${30 + rnd() * 30 | 0},${a})` : `rgba(255,${190 + rnd() * 40 | 0},${120 + rnd() * 40 | 0},${a * 0.7})`;
+              g.fillRect(xx, yy, 5 - layer, 7 - layer); }
+          }
+          x += bw + rnd() * 8;
+        }
+      }
+      // distant neon in the haze
+      const signs = opts.signs || [['HOTEL', '#ff3a1e', 0.2, 0.42], ['BAR', '#ff8a1a', 0.72, 0.5], ['DRUGS', '#2affc8', 0.5, 0.62]];
+      for (const [t, c, fx, fy] of signs) {
+        g.save(); g.font = 'bold ' + (w * 0.05 | 0) + 'px Georgia'; g.textAlign = 'center'; g.shadowColor = c; g.shadowBlur = 24; g.strokeStyle = c; g.lineWidth = 2.2;
+        g.globalAlpha = 0.9; g.strokeText(t, w * fx, h * fy); g.shadowBlur = 6; g.strokeStyle = '#ffe8d0'; g.lineWidth = 0.8; g.strokeText(t, w * fx, h * fy); g.restore();
+      }
+      const haze = g.createLinearGradient(0, h * 0.5, 0, h); haze.addColorStop(0, 'rgba(120,50,10,0)'); haze.addColorStop(1, 'rgba(150,64,14,0.35)'); g.fillStyle = haze; g.fillRect(0, 0, w, h);
+    });
+  }
+  // a neon sign drawn as glowing glass tubes (canvas): for far signs only; near signs are tube meshes in the GLBs
+  function tubeSign(text, color, w, h, font) {
+    return W.tex(w, h, (g) => { g.clearRect(0, 0, w, h); g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+      g.shadowColor = color; g.shadowBlur = 40; g.strokeStyle = color; g.lineWidth = 9; g.strokeText(text, w / 2, h / 2);
+      g.shadowBlur = 14; g.lineWidth = 6; g.strokeText(text, w / 2, h / 2); g.shadowBlur = 0; g.strokeStyle = '#fff2e0'; g.lineWidth = 2; g.strokeText(text, w / 2, h / 2); });
+  }
+  NR.env.cityTex = cityTex; NR.env.tubeSign = tubeSign;
+
+  // ================================================================ OFFICE
+  function buildOffice(q) {
+    const L = new W.Level('office', 0x0a0706, 0.03), S = L.scene;
+    S.userData.expo = 1.15;
+    const BACK = -4.6, DESK_Y = 0.786; L.DESK_Y = DESK_Y;
+    const DOOR = { x0: -1.5, x1: -0.5, h: 2.2 }, WIN = { x0: 0.15, x1: 1.55, y0: 0.8, y1: 2.45 };
+    // door: GLB node when it arrives; the collider is ours (the slice removes it when the door opens)
+    const doorProxy = new T.Group(); doorProxy.position.set(DOOR.x0 + 0.01, 0, BACK - 0.045); S.add(doorProxy); L.door = doorProxy;
+    const doorCol = { min: V3(DOOR.x0, 0, BACK - 0.08), max: V3(DOOR.x1, DOOR.h, BACK + 0.02), cover: false, step: false, tag: 'door' }; L.boxes.push(doorCol); L.doorCol = doorCol;
+    L.boxes.push({ min: V3(WIN.x0, 0, BACK - 0.2), max: V3(WIN.x1, 2.7, BACK + 0.02), cover: false, step: false, tag: 'window' });
+    // rain on the glass (real-time), warm city glow behind
+    const U = { time: { value: 0 } }; L.U = U;
+    const ww = WIN.x1 - WIN.x0, wh = WIN.y1 - WIN.y0, wcx = (WIN.x0 + WIN.x1) / 2, wcy = (WIN.y0 + WIN.y1) / 2;
+    const glass = new T.Mesh(new T.PlaneGeometry(ww, wh), new T.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: U,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+      fragmentShader: `uniform float time; varying vec2 vUv; float h(float n){ return fract(sin(n)*43758.5453); }
+        void main(){ vec2 uv=vUv*vec2(46.,1.); float col=floor(uv.x); float fx=fract(uv.x);
+          float sp=0.25+h(col)*0.6; float y=fract(vUv.y*(1.5+h(col*3.1)*2.)+time*sp+h(col*7.)); float streak=smoothstep(0.86,1.,y)*smoothstep(0.5,0.0,abs(fx-0.5))*step(0.35,h(col*1.7));
+          vec2 d=vUv*vec2(70.,110.); vec2 id=floor(d); float drop=step(0.93,h(dot(id,vec2(12.9,78.2))))*smoothstep(0.45,0.1,length(fract(d)-0.5));
+          gl_FragColor=vec4(vec3(1.0,0.62,0.3), streak*0.4+drop*0.3+0.03); }` }));
+    glass.position.set(wcx, wcy, BACK - 0.1); S.add(glass);
+    const city = new T.Group(); S.add(city);
+    const cmat = W.basic(0xffffff, { map: cityTex(1024, 1024, 77), fog: false });
+    const cb = new T.Mesh(new T.PlaneGeometry(26, 26), cmat); cb.position.set(1.0, 1.0, -22); city.add(cb);
+    const sign = new T.Mesh(new T.PlaneGeometry(4.4, 1.1), W.basic(0xffffff, { map: tubeSign('HOTEL ARCADIA', '#ff3018', 1024, 256, 'italic bold 128px Georgia'), transparent: true, blending: T.AdditiveBlending, depthWrite: false, fog: false }));
+    sign.position.set(1.4, 3.2, -11.5); sign.rotation.y = -0.2; city.add(sign);
+    W.glow(0xff3018, 3.2, 1.4, 3.2, -11.6, city, 0.25);
+    const cruiser = new T.Group(); cruiser.position.set(1.1, 2.6, -8); city.add(cruiser);
+    cruiser.add(new T.Mesh(new T.BoxGeometry(1.6, 0.25, 0.6), W.basic(0x050403, { fog: false })));
+    W.glow(0xff3a2a, 0.35, -0.8, 0, 0.3, cruiser, 0.6); W.glow(0xffb060, 0.45, 0.8, 0, 0.3, cruiser, 0.5);
+    // the revolver on the blotter, the fedora on the coat rack, the cigarette in the ashtray
+    const gun = NR.fx ? NR.fx.revolverModel(true) : new T.Group(); gun.position.set(-0.12, DESK_Y + 0.025, -0.35); gun.rotation.set(-Math.PI / 2, 0, -0.9); gun.scale.setScalar(1.1); S.add(gun); L.deskGun = gun;
+    const hat = NR.fx ? NR.fx.hatModel(0x2a2420) : new T.Group(); hat.position.set(1.78, 1.83, 1.86); hat.rotation.set(0.12, -0.6, 0.05); S.add(hat);
+    L.ashTip = V3(0.25, DESK_Y + 0.03, -0.62);
+    // real-time light for the characters and the code props (the set itself is baked)
+    S.add(new T.HemisphereLight(0x4a3428, 0x0c0806, 0.9));
+    const cookie = W.tex(512, 512, (g, w, h) => { g.fillStyle = '#000'; g.fillRect(0, 0, w, h); const x0 = w * 0.12, x1 = w * 0.88, y0 = h * 0.08, y1 = h * 0.92;
+      const n = 22, sh = (y1 - y0) / n; for (let i = 0; i < n; i++) { g.fillStyle = '#fff'; g.fillRect(x0, y0 + i * sh + sh * 0.42, x1 - x0, sh * 0.5); }
+      g.fillStyle = '#000'; g.fillRect(w * 0.5 - 7, y0, 14, y1 - y0); g.fillRect(x0, y0 + (y1 - y0) * 0.5 - 6, x1 - x0, 12); g.filter = 'blur(1px)'; g.drawImage(g.canvas, 0, 0); }, false);
+    const spot = new T.SpotLight(0xff9a40, 190, 30, 0.24, 0.25, 1.2);
+    spot.position.set(1.6, 4.6, -10.0); spot.target.position.set(-0.8, 0.6, -1.0); S.add(spot, spot.target);
+    spot.map = cookie; spot.castShadow = true; spot.shadow.mapSize.set(q === 'high' ? 1024 : 512, q === 'high' ? 1024 : 512); spot.shadow.camera.near = 4; spot.shadow.camera.far = 20; spot.shadow.bias = -0.0008;
+    const lc = new T.PerspectiveCamera(T.MathUtils.radToDeg(0.24) * 2, 1, 0.5, 30); lc.position.copy(spot.position); lc.lookAt(spot.target.position); lc.updateMatrixWorld(); lc.updateProjectionMatrix();
+    L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0xffa050, k: 0.14, maxD: 9, yTop: 2.6, zMin: BACK - 0.12 };
+    L.spot = spot;
+    const lampLight = new T.PointLight(0xffb36a, 2.2, 3.4, 1.8); lampLight.position.set(-0.52, DESK_Y + 0.29, -0.67); S.add(lampLight);
+    const velaRim = new T.PointLight(0xffa050, 3.0, 3.0, 1.6); velaRim.position.set(-0.9, 1.5, -0.2); S.add(velaRim);
+    const hallLight = new T.PointLight(0xffa860, 2.5, 4.5, 1.6); hallLight.position.set(-1.0, 2.3, BACK - 1.6); S.add(hallLight);
+    const neonSpill = new T.PointLight(0xff2a10, 2.4, 6, 1.6); neonSpill.position.set(0.6, 2.4, BACK + 0.3); S.add(neonSpill);
+    L.sideLight = { ambient: 0xa88068, key: 0xffc080, warm: 0x8a3414 };
+    // a floor shadow catcher for 3D characters (the set itself does not take real-time shadows)
+    const catcher = new T.Mesh(new T.PlaneGeometry(4.2, 6.8), new T.ShadowMaterial({ opacity: 0.45 })); catcher.rotation.x = -Math.PI / 2; catcher.position.set(0, 0.004, -1.2); catcher.receiveShadow = true; S.add(catcher);
+    if (NR.fx) { S.add(NR.fx.smoke(160, L.ashTip, { rise: 0.9, spread: 0.08, size: 26, alpha: 0.2, life: 5, tint: 0xd8c8b8 }, L.shaft)); S.add(NR.fx.smoke(50, V3(0, 1.0, -2.2), { rise: 1.6, spread: 1.4, size: 260, alpha: 0.025, life: 30, tint: 0xc8a888 }, L.shaft)); }
+    let blades = null;
+    L.updaters.push((dt, t) => { U.time.value = t; if (blades) blades.rotation.y = t * 0.9; cruiser.position.x = 1.6 - ((t * 0.35) % 5.0); cruiser.position.y = 2.6 + Math.sin(t * 0.8) * 0.1; neonSpill.intensity = 2.4 * (Math.sin(t * 1.3) > 0.97 ? 0.3 : 1); });
+    L.spawn = { pos: V3(0.0, 0, 1.6), yaw: 0 };
+    L.exitDoor = { x: -1.0, z: BACK - 0.3 };
+    L.finish();
+    attach(L, 'office', (root) => {
+      const d = node(root, 'door'); if (d) { doorProxy.position.copy(d.position); d.position.set(0, 0, 0); doorProxy.add(d); }
+      blades = node(root, 'fan_blades');
+    }, { lm: 8.5, baked: 8.5 });
+    return L;
+  }
+
+  // ---------------------------------------------------------------- shared outdoor pieces
+  function warmRain(L, q) {
+    if (!NR.fx) return;
+    L.rain = NR.fx.rain(q === 'high' ? 2600 : 1600);
+    L.rain.material.fragmentShader = L.rain.material.fragmentShader.replace('vec4(0.72,0.8,0.86, a)', 'vec4(0.95,0.74,0.52, a*0.8)');
+    L.scene.add(L.rain); L.updaters.push((dt, t) => { L.rain.material.uniforms.time.value = t; });
+  }
+  // wet ground: procedural puddles (world xz) turn the baked asphalt into a dark mirror over the reflected set below
+  function wetGround(mat, opts = {}) {
+    mat.transparent = true; mat.depthWrite = true;
+    mat.onBeforeCompile = (s) => {
+      s.uniforms.puddleK = { value: opts.k || 0.78 };
+      s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <project_vertex>', '#include <project_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+        varying vec3 vWp; uniform float puddleK;
+        float ph(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float pn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); return mix(mix(ph(i), ph(i+vec2(1,0)), f.x), mix(ph(i+vec2(0,1)), ph(i+vec2(1,1)), f.x), f.y); }
+        float puddle(vec2 p){ float n = pn(p*0.45)*0.55 + pn(p*1.1+7.3)*0.3 + pn(p*3.1-2.1)*0.15; return smoothstep(0.585, 0.62, n); }`)
+        .replace('#include <opaque_fragment>', `float pm = puddle(vWp.xz) * puddleK; float edge = max(0.0, 1.0 - abs(vWp.x) / 3.0);
+          pm *= smoothstep(0.0, 0.25, edge) * 0.6 + 0.4;
+          outgoingLight *= 1.0 - pm * 0.55; diffuseColor.a = 1.0 - pm;
+          #include <opaque_fragment>`);
+    };
+    mat.needsUpdate = true; mat.userData.wet = true;
+  }
+  // a mirrored copy of the lit set under y = 0: seen only through the transparent puddles
+  function mirror(L, objs, dim) {
+    const g = new T.Group(); g.scale.y = -1; L.scene.add(g);
+    for (const o of objs) {
+      const c = o.clone(true); c.traverse(m => { if (m.isMesh) { const mm = m.material.clone(); if (mm.color && !/^NEON/.test(mm.name)) mm.color.multiplyScalar(dim); mm.fog = true; m.material = mm; } });
+      c.position.copy(o.getWorldPosition(new T.Vector3())); c.quaternion.copy(o.getWorldQuaternion(new T.Quaternion())); g.add(c);
+    }
+    return g;
+  }
+
+  // ================================================================ ALLEY
+  function buildAlley(q) {
+    const L = new W.Level('alley', 0x120a06, 0.045), S = L.scene; L.outdoor = true; S.userData.expo = 1.25;
+    S.background = new T.Color(0x070403);
+    // the skyline beyond the street mouth (sodium windows, distant neon, haze)
+    const sky = new T.Mesh(new T.PlaneGeometry(140, 60), W.basic(0xffffff, { map: cityTex(2048, 1024, 31, { signs: [['HOTEL', '#ff3a1e', 0.36, 0.52], ['EAT', '#2affc8', 0.6, 0.6], ['BAR', '#ff8a1a', 0.47, 0.66], ['DANCING', '#ff2a6a', 0.7, 0.48]] }), fog: false }));
+    sky.position.set(0, 22, -95); S.add(sky);
+    const skyGlow = new T.Mesh(new T.PlaneGeometry(40, 30), W.basic(0x6a2a0a, { transparent: true, opacity: 0.18, blending: T.AdditiveBlending, depthWrite: false, fog: false }));
+    skyGlow.position.set(0, 18, -42); S.add(skyGlow);
+    // real-time light for the characters (the set is baked): neon spill, door lamps, the sodium lamp over Miles
+    S.add(new T.HemisphereLight(0x5a3a2a, 0x140c08, 0.9));
+    const pl = (c, i, x, y, z, d) => { const p = new T.PointLight(c, i, d || 9, 1.6); p.position.set(x, y, z); S.add(p); return p; };
+    const signs = [pl(0xff2a14, 40, -2.4, 4.4, -7, 11), pl(0x20ffc0, 45, 2.4, 4.4, -14, 12), pl(0xff8a20, 40, -2.4, 3.6, -24, 11), pl(0xff2a6a, 34, 2.4, 5.2, -30, 11)];
+    for (const [x, z] of [[-2.95, -9], [2.95, -17], [-2.95, -27]]) { pl(0xffa860, 10, x, 2.6, z, 6); W.glow(0xff9a40, 0.4, x, 2.62, z, S, 0.4); }
+    const cookie = W.tex(256, 256, (g, w, h) => { g.fillStyle = '#000'; g.fillRect(0, 0, w, h); const r = g.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, w / 2); r.addColorStop(0, '#fff'); r.addColorStop(0.7, '#aaa'); r.addColorStop(1, '#000'); g.fillStyle = r; g.fillRect(0, 0, w, h); }, false);
+    const spot = new T.SpotLight(0xff9030, 260, 18, 0.62, 0.4, 1.4);
+    spot.position.set(2.1, 3.45, -36.6); spot.target.position.set(0.4, 0, -34.6); S.add(spot, spot.target);
+    spot.map = cookie; spot.castShadow = true; spot.shadow.mapSize.set(q === 'high' ? 1024 : 512, q === 'high' ? 1024 : 512); spot.shadow.camera.near = 0.5; spot.shadow.camera.far = 18; spot.shadow.bias = -0.0008;
+    const lc = new T.PerspectiveCamera(T.MathUtils.radToDeg(0.62) * 2, 1, 0.5, 30); lc.position.copy(spot.position); lc.lookAt(spot.target.position); lc.updateMatrixWorld(); lc.updateProjectionMatrix();
+    L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0xffa040, k: 0.13, maxD: 30, yTop: 3.6 }; L.spot = spot;
+    W.glow(0xffa040, 1.6, 2.1, 3.42, -36.6, S, 0.9); W.glow(0xffa040, 1.3, 2.1, -3.42, -36.6, S, 0.35);
+    L.sideLight = { ambient: 0x4a3426, key: 0xffa040, warm: 0x401808 };
+    // glows around the blade signs (+ their reflections)
+    const halos = [];
+    for (const [c, x, y, z, s] of [[0xff2a14, -2.6, 4.5, -7, 3.2], [0x20ffc0, 2.6, 4.55, -14, 3.6], [0xff8a20, -2.6, 3.75, -24, 2.4], [0xff2a6a, 2.6, 5.3, -30, 3.2]]) {
+      halos.push(W.glow(c, s, x, y, z, S, 0.28)); W.glow(c, s * 0.8, x, -y, z, S, 0.12);
+    }
+    warmRain(L, q);
+    if (NR.fx) {
+      S.add(NR.fx.smoke(46, V3(0.4, 0.05, -19), { rise: 2.6, spread: 0.45, size: 160, alpha: 0.035, life: 6, tint: 0xb8a898 }, L.shaft));
+      S.add(NR.fx.smoke(24, V3(-2.9, 0.4, -24.6), { rise: 1.8, spread: 0.3, size: 140, alpha: 0.03, life: 5, tint: 0xa89888 }, L.shaft));
+    }
+    L.updaters.push((dt, t) => { for (let i = 0; i < signs.length; i++) { const k = (L.neonK && L.neonK[i] != null) ? L.neonK[i] : 1; signs[i].intensity = [40, 45, 40, 34][i] * k; halos[i].material.opacity = 0.28 * k; } });
+    L.spawn = { pos: V3(0, 0, 0.5), yaw: 0 };
+    L.bodyPos = V3(0.2, 0, -34.5);
+    L.finish();
+    attach(L, 'alley', (root) => {
+      let wet = null; root.traverse(o => { if (o.isMesh && /WET/.test(o.material.name)) wet = o; });
+      if (wet) wetGround(wet.material, { k: 0.62 });
+      const props = node(root, 'PROPS'), neon = node(root, 'NEON');
+      mirror(L, [props, neon].filter(Boolean), 0.4);
+      // neon flicker drives the matching real-time spill: red, teal, orange, pink tubes by material name
+      const order = ['red', 'teal', 'orange', 'pink']; L.neonK = [1, 1, 1, 1];
+      L.updaters.push(() => { for (const n of L.neon) { const i = order.findIndex(c => n.mat.name.endsWith(c)); if (i >= 0) L.neonK[i] = n.mat.color.r / Math.max(1e-3, n.mat.userData.base.r) || 1; } });
+      for (const n of L.neon) if (/red$/.test(n.mat.name)) n.mesh.userData.flicker = 0.18;
+    }, { lm: 4, baked: 4, neon: 0.5 });
+    return L;
+  }
+
+  // ================================================================ THE BLUE ORCHID
+  function buildClub(q) {
+    const L = new W.Level('club', 0x0e0908, 0.03), S = L.scene; S.userData.expo = 1.3;
+    const RH = 4.2;
+    // real-time light for the characters: warm practicals, the blue neon over the stage, the stage spot
+    S.add(new T.HemisphereLight(0x6a4a3a, 0x2a1810, 1.6));
+    const pl = (c, i, x, y, z, d) => { const p = new T.PointLight(c, i, d || 9, 1.6); p.position.set(x, y, z); S.add(p); return p; };
+    pl(0xffa050, 34, -6.6, 2.8, -9, 10); pl(0xff9a50, 34, 6.2, 2.0, -8.5, 11); pl(0xffb070, 16, 7.2, 2.1, -19.2, 6);
+    for (const [x, z] of [[-2, -6], [2.5, -10], [-1, -14]]) pl(0xffb070, 18, x, 3.3, z, 9);
+    const neonLight = pl(0x3070ff, 26, -1.5, 3.3, -21.5, 10);
+    for (const [x, z] of [[-2, -6], [2.5, -10], [-1, -14]]) W.glow(0xffb060, 1.0, x, RH - 0.9, z, S, 0.18);
+    W.glow(0xff2a80, 1.6, 2.35, 3.6, -23.2, S, 0.25); W.glow(0xff2a14, 2.6, -7.8, 3.15, -9, S, 0.22);
+    const cookie = W.tex(256, 256, (g, w, h) => { g.fillStyle = '#000'; g.fillRect(0, 0, w, h); const r = g.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w * 0.42); r.addColorStop(0, '#fff'); r.addColorStop(0.7, '#ddd'); r.addColorStop(1, '#000'); g.fillStyle = r; g.fillRect(0, 0, w, h); }, false);
+    const spot = new T.SpotLight(0xffd0a0, 700, 30, 0.32, 0.25, 1.2);
+    spot.position.set(1.0, RH - 0.3, -11.5); spot.target.position.set(-1.5, 0.6, -19.5); S.add(spot, spot.target);
+    spot.map = cookie; spot.castShadow = true; spot.shadow.mapSize.set(q === 'high' ? 1024 : 512, q === 'high' ? 1024 : 512); spot.shadow.camera.near = 0.5; spot.shadow.camera.far = 30; spot.shadow.bias = -0.0008;
+    const lc = new T.PerspectiveCamera(T.MathUtils.radToDeg(0.32) * 2, 1, 0.5, 30); lc.position.copy(spot.position); lc.lookAt(spot.target.position); lc.updateMatrixWorld(); lc.updateProjectionMatrix();
+    L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0xe8c8a8, k: 0.11, maxD: 18, yTop: 4.1 }; L.spot = spot;
+    W.glow(0xffd8a8, 0.8, 1.0, RH - 0.32, -11.5, S);
+    L.sideLight = { ambient: 0x5a4438, key: 0xffd0a0, warm: 0x5a2010 };
+    if (NR.fx) S.add(NR.fx.smoke(90, V3(-0.5, 0.8, -12), { rise: 2.6, spread: 4.0, size: 380, alpha: 0.012, life: 34, tint: 0x9a8a80 }, L.shaft));
+    L.signLight = new T.PointLight(0xff2a14, 0, 18, 1.2); L.signLight.position.set(0.6, 3.8, -10.5); S.add(L.signLight); // the title sign's red cast (landing menu)
+    L.updaters.push((dt, t) => { neonLight.intensity = 26 * (Math.sin(t * 0.9) > 0.985 ? 0.4 : 1); });
+    L.spawn = { pos: V3(0, 0, -0.6), yaw: 0 };
+    L.doloresPos = V3(5.6, 0, -16.6);
+    L.finish();
+    attach(L, 'club', null, { lm: 8, baked: 7, neon: 0.034 });
+    return L;
+  }
+
+  // ---------------------------------------------------------------- install (only for levels whose GLB exists)
+  if (ON) {
+    const builders = { office: buildOffice, alley: buildAlley, club: buildClub };
+    NR.env.built = Object.keys(builders);
+    const orig = Object.assign({}, W.build);
+    for (const name of Object.keys(builders)) W.build[name] = builders[name];
+    NR.env.orig = orig;
+    // fetch order: the club (title backdrop), then the office (first beat), then the alley
+    get('club').then(() => get('office')).then(() => get('alley'));
+  }
+})();
+
+</script>
 <script>/* actors.js */
-// NEON RAIN actors: painted billboard characters (8 view angles + idle frames) and grey-box enemies with cover AI.
+// NEON RAIN actors: painted billboard characters (8 view angles + idle frames) and enemies with cover AI.
+// Enemies and Miles Corran are rigged 3D people from src/cast.js (block figures only while the GLB is still loading).
 (function () {
   const T = THREE, V3 = (x, y, z) => new T.Vector3(x, y, z), C = NR.cfg;
 
@@ -82015,6 +82520,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     constructor(level, o) {
       this.id = nextId++; this.level = level; this.type = o.type || 'gunman'; this.kind = o.kind || 'human';
       this.style = o.style || (this.type === 'thug' ? 'thug' : 'gale');
+      this.variant = this.kind === 'artificial' ? 'synth' : this.style === 'thugGun' ? 'thug_c' : this.style === 'thug' ? (o.flashlight ? 'thug_b' : 'thug_a') : ['gale_a', 'gale_b', 'gale_c'][Enemy.galeN++ % 3];
+      this.hs = this.variant === 'synth' ? 1.1 : 1; // the artificial man stands 2 m tall
       const f = buildFigure(STYLES[this.style]); Object.assign(this, f);
       this.pos = o.pos.clone(); this.yaw = o.yaw || 0; this.hp = o.hp || (this.type === 'thug' ? 70 : 100); this.maxHp = this.hp;
       this.state = o.dormant ? 'dormant' : 'idle'; this.t = 0; this.cover = null; this.crouch = 0; this.peekOff = V3(0, 0, 0); this.peekAmt = 0;
@@ -82029,17 +82536,33 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       // muzzle glint: telegraphs a shot ~0.4 s before it comes
       this.glint = NR.world.glow(0xfff6e0, 0.32, 0, 0.05, 0.74, this.arm); this.glint.visible = false; this.glint.material.depthTest = true;
       this.group.position.copy(this.pos); this.group.rotation.y = this.yaw; level.scene.add(this.group);
-      this.fallAxis = V3(1, 0, 0);
+      this.fallAxis = V3(1, 0, 0); this.prev = this.pos.clone(); this.vel = V3(0, 0, 0);
+      this.cr = null; const tpl = NR.cast && NR.cast.ready(this.variant);
+      if (tpl) this.useRig(tpl); else if (NR.cast) NR.cast.family(NR.ASSET + NR.cast.URL[NR.cast.FAMILY[this.variant]]).then(t => { if (!this.removed && t) this.useRig(t); }, () => {});
     }
-    get eye() { return V3(this.pos.x, 1.5 - 0.48 * this.crouch, this.pos.z).add(this.peekOff); }
-    get headC() { return V3(this.pos.x + this.peekOff.x, 1.66 - 0.45 * this.crouch, this.pos.z + this.peekOff.z); }
+    useRig(tpl) { // swap the block figure for the rigged person
+      const r = new NR.cast.Rig(tpl, this.variant); this.cr = r;
+      for (const m of [this.legs, this.upper]) this.group.remove(m);
+      this.group.add(r.root);
+      if (this.glint && this.glint.parent) this.glint.parent.remove(this.glint);
+      this.glint = NR.world.glow(0xfff6e0, 0.32, 0, 0, 0, r.muzzle || r.bones.handR); this.glint.visible = false; this.glint.material.depthTest = true;
+      if (this.type === 'thug' && r.lampTip) {
+        let cone = null; this.upper.traverse(c => { if (c.isMesh && c.geometry.type === 'ConeGeometry') cone = c; });
+        if (cone) { cone.parent.remove(cone); this.group.add(cone); cone.rotation.set(0, 0, 0); this.cone = cone; }
+        NR.world.glow(0xfff0c0, 0.5, 0, 0, 0, r.lampTip);
+      }
+      if (this.dead) { r.full(this.deathClip || 'die_back', 0); r.update(5); }
+    }
+    get headY() { return 1.66 * this.hs; }
+    get eye() { return V3(this.pos.x, 1.5 * this.hs - 0.48 * this.crouch, this.pos.z).add(this.peekOff); }
+    get headC() { return V3(this.pos.x + this.peekOff.x, this.headY - 0.45 * this.crouch, this.pos.z + this.peekOff.z); }
     // ray hit test against head sphere and body cylinder; returns {t, head, point}
     hitTest(o, d, maxT) {
       if (this.dead) return null;
       const hc = this.headC, oc = o.clone().sub(hc), b = oc.dot(d), c = oc.lengthSq() - 0.15 * 0.15, disc = b * b - c;
       let best = null;
       if (disc >= 0) { const t = -b - Math.sqrt(disc); if (t > 0 && t < maxT) best = { t, head: true }; }
-      const bx = this.pos.x + this.peekOff.x, bz = this.pos.z + this.peekOff.z, top = 1.5 - 0.45 * this.crouch, r = 0.27;
+      const bx = this.pos.x + this.peekOff.x, bz = this.pos.z + this.peekOff.z, top = 1.5 * this.hs - 0.45 * this.crouch, r = 0.27;
       const ox = o.x - bx, oz = o.z - bz, A = d.x * d.x + d.z * d.z, Bq = 2 * (ox * d.x + oz * d.z), Cq = ox * ox + oz * oz - r * r, D = Bq * Bq - 4 * A * Cq;
       if (A > 1e-9 && D >= 0) { const t = (-Bq - Math.sqrt(D)) / (2 * A); if (t > 0 && t < maxT) { const y = o.y + d.y * t; if (y > 0 && y < top && (!best || t < best.t)) best = { t, head: false }; } }
       if (best) best.point = o.clone().addScaledVector(d, best.t);
@@ -82048,19 +82571,36 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     damage(amount, point, dir, head) {
       if (this.dead) return false;
       this.hp -= amount; this.flinch = 0.28; this.aimT = 0; this.mat && 0;
-      NR.fx.blood(point, dir, this.kind, head ? 1.6 : 1.0, head ? this.upper : (point.y < 0.86 ? this.legs : this.upper));
+      if (this.cr) { // the wound sits on the body surface, on the bone that was hit; the body reacts to the side it was hit from
+        const b = this.cr.bones, part = head ? b.head : point.y < 0.86 * this.hs ? (this.legSide(point) > 0 ? b.thighL : b.thighR) : b.spine2;
+        const c = part.getWorldPosition(V3(0, 0, 0)); if (head) c.y += 0.1;
+        const out = V3(point.x - c.x, 0, point.z - c.z); if (out.lengthSq() < 1e-6) out.set(-dir.x, 0, -dir.z); out.normalize();
+        const p2 = c.clone().addScaledVector(out, head ? 0.1 : part === b.spine2 ? 0.14 : 0.08); p2.y = head ? c.y : Math.min(Math.max(point.y, c.y - 0.25), c.y + 0.3);
+        NR.fx.blood(p2, dir, this.kind, head ? 1.6 : 1.0, part);
+        const f = V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), side = f.x * dir.z - f.z * dir.x;
+        this.cr.additive(Math.abs(side) < 0.5 ? 'hit_front' : side > 0 ? 'hit_left' : 'hit_right', head ? 1.3 : 1);
+      } else NR.fx.blood(point, dir, this.kind, head ? 1.6 : 1.0, head ? this.upper : (point.y < 0.86 ? this.legs : this.upper));
       if (this.state === 'dormant' || this.state === 'idle') this.alert();
       if (this.hp <= 0) { this.die(dir, head); return true; }
       return false;
     }
+    legSide(p) { const r = V3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); return -((p.x - this.pos.x) * r.x + (p.z - this.pos.z) * r.z); }
     alert() { if (this.dead) return; if (this.state === 'dormant' || this.state === 'idle') { this.state = this.entry ? 'enter' : (this.type === 'thug' ? 'rush' : 'engage'); this.t = 0; } }
     die(dir, head) {
       this.dead = true; this.state = 'dead'; this.deadT = 0; if (this.cover) { this.cover.taken = null; this.cover = null; }
       this.fallAxis = V3(dir.z, 0, -dir.x).normalize(); this.fallFrom = this.group.quaternion.clone();
+      const fwd = Math.sin(this.yaw) * dir.x + Math.cos(this.yaw) * dir.z; // > 0: shot from behind
+      this.deathClip = fwd > 0.3 ? 'die_fwd' : (head && Math.random() < 0.5) || Math.random() < 0.25 ? 'die_slip' : 'die_back';
+      if (this.cr) { this.cr.full(this.deathClip, 0.1, true); this.glint.visible = false; if (this.cone) this.cone.visible = false; }
       NR.bus.emit('enemyDown', { enemy: this, head });
     }
     update(dt, P) {
       const L = this.level; this.t += dt;
+      if (this.dead && this.cr) {
+        this.deadT += dt; this.cr.update(dt);
+        if (!this.pooled && this.deadT > 1.1) { this.pooled = true; const h = this.cr.bones.hips.getWorldPosition(V3(0, 0, 0)); NR.fx.pool(V3(h.x, 0, h.z), this.kind); }
+        return;
+      }
       if (this.dead) {
         if (this.deadT < 1) {
           this.deadT += dt; const k = Math.min(1, this.deadT / 0.55), e = k * k;
@@ -82136,6 +82676,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       this.crouch += (crouchT - this.crouch) * Math.min(1, dt * 9);
       this.peekAmt += (peekT - this.peekAmt) * Math.min(1, dt * 8);
       if (this.peekDir) this.peekOff.copy(this.peekDir).multiplyScalar(0.75 * this.peekAmt); else this.peekOff.multiplyScalar(0.8);
+      if (this.cr) { this.animate(dt, P, aiming, pChest, dist); return; }
       const walk = moveTo ? Math.sin(this.t * 11) : 0;
       this.group.position.set(this.pos.x + this.peekOff.x, Math.abs(walk) * 0.03, this.pos.z + this.peekOff.z); this.group.rotation.y = this.yaw;
       this.legs.scale.y = 1 - 0.5 * this.crouch; this.upper.position.y = 0.86 - 0.45 * this.crouch; this.upper.rotation.x = this.crouch * 0.25 + (this.flinch > 0 ? -0.2 : 0);
@@ -82143,6 +82684,42 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       const armDown = 1.25, armAim = -0.02 - (aiming ? Math.atan2(pChest.y - this.eye.y, dist) : 0);
       const at = aiming || this.state === 'rush' ? armAim : armDown; this.arm.rotation.x += (at - this.arm.rotation.x) * Math.min(1, dt * 12);
       if (this.state === 'melee') this.arm.rotation.x = this.atkT > 0.2 ? -1.6 - Math.sin(this.t * 30) * 0.05 : -1.6 + (0.2 - this.atkT) * 12; // raised knife telegraphs the swing
+    }
+    animate(dt, P, aiming, pChest, dist) {
+      const r = this.cr, k = r.kind;
+      this.vel.set((this.pos.x - this.prev.x) / Math.max(dt, 1e-3), 0, (this.pos.z - this.prev.z) / Math.max(dt, 1e-3)); this.prev.copy(this.pos);
+      this.group.position.set(this.pos.x + this.peekOff.x, 0, this.pos.z + this.peekOff.z); this.group.rotation.y = this.yaw;
+      const sp = this.vel.length(), fwd = this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw);
+      const alerted = this.state !== 'dormant' && this.state !== 'idle';
+      if (this.state === 'melee') {
+        if (this.lastState !== 'melee') r.full(r.has('slash') ? 'slash' : 'hold_' + k, 0.08, true);
+      } else {
+        let low = 'idle', ts = 1;
+        if (sp > 0.5 && this.state !== 'peek') {
+          if (fwd >= -0.2 * sp) { low = sp > 2.0 ? 'run' : 'walk'; ts = sp / r.speedOf(low); }
+          else { low = 'walk'; ts = -sp / r.speedOf('walk'); }
+        } else if (this.crouch > 0.5) low = 'crouch';
+        if (this.lastState === 'melee') { r.layerName.L = ''; r.layerName.U = ''; }
+        r.play('L', low, 0.22, false, ts);
+        let up = low;
+        if (alerted && k !== 'none') up = aiming && r.has('aim_' + k) ? 'aim_' + k : 'hold_' + k;
+        r.play('U', up, 0.2, false, up === low ? ts : 1);
+      }
+      this.lastState = this.state;
+      r.update(dt);
+      if (aiming && this.state !== 'melee') { // pitch the chest onto the target
+        const f = V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), ax = V3(f.z, 0, -f.x);
+        const pitch = Math.atan2(pChest.y - this.eye.y, Math.max(dist, 0.5));
+        r.bend(r.bones.chest, ax, -pitch * 0.85);
+      }
+      if (this.flinch > 0) r.bend(r.bones.head, V3(0, 1, 0), Math.sin(this.t * 40) * 0.06);
+      r.lod(Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) > 13);
+      if (this.cone && r.lampTip) { // the flashlight beam follows the lamp in his hand
+        const tip = r.lampTip.getWorldPosition(V3(0, 0, 0)), hand = r.bones.handL.getWorldPosition(V3(0, 0, 0));
+        const d = tip.clone().sub(hand).normalize(); this.group.worldToLocal(tip);
+        const dl = d.applyQuaternion(this.group.quaternion.clone().invert());
+        this.cone.quaternion.setFromUnitVectors(V3(0, -1, 0), dl); this.cone.position.copy(tip).addScaledVector(dl, 1.5);
+      }
     }
     backToCover(failed) { if (this.cover) { this.state = 'cover'; this.t = 0; this.wait = 1.0 + Math.random() * 1.8; if (failed) this.flankT = Math.min(this.flankT, 1.5); } else { this.state = 'engage'; this.t = 0; } }
     coverGood(P) { if (!this.cover) return false; const d = V3(P.pos.x - this.cover.pos.x, 0, P.pos.z - this.cover.pos.z); const L = d.length(); if (L < 2.2) return false; return d.normalize().dot(this.cover.n) < -0.25; }
@@ -82168,7 +82745,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       return best;
     }
     fire(P, dist, suppressAt) {
-      const muzzle = this.arm.localToWorld(V3(0, 0.04, 0.72));
+      const muzzle = this.cr ? (this.cr.muzzle || this.cr.bones.handR).getWorldPosition(V3(0, 0, 0)) : this.arm.localToWorld(V3(0, 0.04, 0.72));
+      if (this.cr) this.cr.additive('recoil', this.cr.kind === 'tommy' ? 0.6 : 1);
       // accuracy falls off with range, a moving target and slow-mo; the first shot of a peek is the steadiest
       let ch = (0.72 - dist * 0.028) * this.accuracy; if (P.moving) ch *= 0.6; if (P.focus > 0) ch *= 0.75; ch = NR.clamp(ch, 0.1, 0.72);
       const hit = !suppressAt && Math.random() < ch, tgt = suppressAt ? suppressAt.clone() : V3(P.pos.x, P.pos.y + 1.2, P.pos.z);
@@ -82179,13 +82757,34 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       if (hit) NR.bus.emit('playerHit', { dmg: this.dmg, from: this.pos.clone() });
       else if (!suppressAt && NR.core) NR.bus.emit('nearMiss', { from: this.pos.clone() });
     }
-    remove() { if (this.group.parent) this.group.parent.remove(this.group); if (this.cover) this.cover.taken = null; }
+    remove() { this.removed = true; if (this.group.parent) this.group.parent.remove(this.group); if (this.cover) this.cover.taken = null; }
   }
-  Enemy.all = []; Enemy.flankers = 0;
+  Enemy.all = []; Enemy.flankers = 0; Enemy.galeN = 0;
   function spawn(level, o) { const e = new Enemy(level, o); Enemy.all.push(e); return e; }
-  function clear() { for (const e of Enemy.all) e.remove(); Enemy.all = []; Enemy.flankers = 0; }
-  function corpse(level, pos, yaw) { const f = buildFigure(STYLES.corpse); f.group.position.copy(pos); f.group.rotation.set(-Math.PI / 2 + 0.05, yaw, 0, 'YXZ'); f.group.position.y = 0.14; f.arm.rotation.x = 0.4; level.scene.add(f.group); return f; }
+  function clear() { for (const e of Enemy.all) e.remove(); Enemy.all = []; Enemy.flankers = 0; Enemy.galeN = 0; }
+  function corpse(level, pos, yaw) { // Miles Corran on his back, his fedora fallen beside him
+    const g = new T.Group(); level.scene.add(g);
+    const fb = corpseBlocks(level, pos, yaw); fb.group.visible = false;
+    const show = (tpl) => {
+      if (!g.parent || !tpl) return;
+      const r = new NR.cast.Rig(tpl, 'miles'); r.full('dead_pose', 0, true); r.update(2); r.lod(false);
+      g.add(r.root); g.rotation.y = yaw; g.position.copy(pos); g.updateMatrixWorld(true);
+      const h = r.bones.hips.getWorldPosition(V3(0, 0, 0)); g.position.x += pos.x - h.x; g.position.z += pos.z - h.z; g.updateMatrixWorld(true);
+      if (r.hat) { // the fedora lies on the ground beside his head
+        const hp = r.bones.head.getWorldPosition(V3(0, 0, 0)); r.hat.parent.remove(r.hat);
+        const hat = new T.Group(); hat.add(r.hat); r.hat.position.set(0, 0, 0); r.hat.quaternion.identity(); r.hat.updateMatrix();
+        const bb = new T.Box3().setFromObject(r.hat), c = bb.getCenter(V3(0, 0, 0)); r.hat.position.set(-c.x, -bb.min.y, -c.z);
+        hat.position.set(hp.x + 0.35 * Math.cos(yaw), 0.0, hp.z - 0.35 * Math.sin(yaw)); hat.rotation.set(0, yaw + 0.7, 0.08); level.scene.add(hat); g.userData.hat = hat;
+      }
+      g.userData.rig = r; if (fb.group.parent) fb.group.parent.remove(fb.group);
+    };
+    const t = NR.cast && NR.cast.ready('miles');
+    if (t) show(t); else if (NR.cast) { fb.group.visible = true; NR.cast.family(NR.ASSET + NR.cast.URL.miles).then(show, () => {}); } else fb.group.visible = true;
+    return { group: g };
+  }
+  function corpseBlocks(level, pos, yaw) { const f = buildFigure(STYLES.corpse); f.group.position.copy(pos); f.group.rotation.set(-Math.PI / 2 + 0.05, yaw, 0, 'YXZ'); f.group.position.y = 0.14; f.arm.rotation.x = 0.4; level.scene.add(f.group); return f; }
 
+  if (NR.cast) setTimeout(() => NR.cast.preload(), 300); // fetch the cast while the title is up
   NR.actors = { Painted, Model3D, character, loadGLB, MODELS, Enemy, spawn, clear, corpse, buildFigure, preload, get enemies() { return Enemy.all; } };
 })();
 
@@ -82208,7 +82807,17 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // ---------------------------------------------------------------- view models (rendered in their own pass, no wall clipping)
   const vm = { scene: new T.Scene() };
-  vm.scene.add(new T.AmbientLight(0x9098a8, 1.4)); const vmRim = new T.DirectionalLight(0x9fd0ff, 2.2); vmRim.position.set(1, 0.6, -1); vm.scene.add(vmRim); const vmKey = new T.DirectionalLight(0xffe8d0, 2.4); vmKey.position.set(-1, 1.5, 0.5); vm.scene.add(vmKey);
+  // warm practicals only: amber incandescent key, sodium fill, teal neon rim (no red: the grade keeps reds as blood)
+  vm.scene.add(new T.HemisphereLight(0xc8ae98, 0x2a1408, 1.5));
+  const vmKey = new T.DirectionalLight(0xffd8b0, 2.3); vmKey.position.set(-0.6, 1.6, 0.9); vm.scene.add(vmKey);
+  const vmRim = new T.DirectionalLight(0x2ad0c0, 1.0); vmRim.position.set(1.2, 0.4, -1); vm.scene.add(vmRim);
+  const vmRed = new T.DirectionalLight(0xff7a30, 0.3); vmRed.position.set(-1.2, 0.2, -0.8); vm.scene.add(vmRed);
+  { // tiny warm environment for the blued steel's reflections (PMREM of a dark room with an amber lamp and neon strips)
+    const es = new T.Scene(); es.background = new T.Color(0x0a0705);
+    const strip = (c, w, h, x, y, z) => { const m = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshBasicMaterial({ color: c, side: T.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); es.add(m); };
+    strip(0xffa050, 3, 2, -2, 3, 1); strip(0x30e0d0, 0.4, 4, 3, 0.5, -2); strip(0xc06030, 0.4, 3, -3, 0, -2); strip(0x5a3a20, 8, 1, 0, -2, 0);
+    try { const pm = new T.PMREMGenerator(NR.core.renderer); vm.scene.environment = pm.fromScene(es, 0.03).texture; pm.dispose(); } catch (e) { console.warn('[vm env]', e); }
+  }
   const vmFlash = new T.PointLight(0xffb050, 0, 2, 1.5); vmFlash.position.set(0.15, -0.05, -0.6); vm.scene.add(vmFlash);
   const gunRig = new T.Group(); vm.scene.add(gunRig);
   const gun = NR.fx.revolverModel(); gun.scale.setScalar(1.0); gunRig.add(gun);
@@ -82228,6 +82837,34 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const CIG_HOME = V3(-0.06, -0.085, -0.26);
   cigRig.position.copy(CIG_HOME); cigRig.rotation.set(0.1, 0.4, 0.2); cigRig.scale.setScalar(0.6); cigRig.visible = false;
   vm.scene.visible = true; NR.core.vm = vm; P.vm = vm;
+
+  // modelled viewmodel (tools/env/viewmodel.py): revolver in a gloved right hand, cigarette in the left. Code models above
+  // stay as the fallback until the GLB arrives.
+  const vmp = { drum: gun.userData.drum, axis: 'y', crane: null };
+  const VM_GUN = { pos: V3(0.036, -0.098, -0.26), rot: V3(0.08, 0.26, 0.16) }, VM_CIG = { pos: V3(-0.06, -0.125, -0.27), rot: V3(0.6, -0.45, 0.35) };
+  if (NR.gltf) NR.fx.vmAsset = NR.gltf.load(NR.ASSET + 'models/vm_revolver.glb').then(({ scene }) => {
+    const N = k => scene.getObjectByName(k), rigR = N('rig_r'), rigL = N('rig_l'), muz = N('muzzle'), drum = N('cylinder'), crane = N('crane'), tip = N('cig_tip');
+    const lefts = { cig: N('hand_l'), cup: N('hand_l_cup'), relax: N('hand_l_relax') }, cigNode = N('cig');
+    // left-hand pose variants: 'cig' (between index and middle), 'cup' (shielding a match), 'relax' (empty)
+    P.setLeftHand = (k) => { for (const n in lefts) if (lefts[n]) lefts[n].visible = n === k; if (cigNode) cigNode.visible = k === 'cig'; P.leftPose = k; };
+    P.setLeftHand('cig');
+    if (!rigR || !rigL || !muz || !drum || !crane || !tip) throw new Error('vm_revolver.glb: rigs missing');
+    scene.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; if (o.material.metalness > 0.5) o.material.envMapIntensity = 2.6; } });
+    if (NR.fx.useRevolverAsset) NR.fx.useRevolverAsset(N('revolver')); // desk revolver uses the same model
+    // gun: full scale, lower right
+    gun.visible = false; sleeve.visible = false; glove.visible = false;
+    gunRig.scale.setScalar(1); GUN_HOME.copy(VM_GUN.pos); gunRig.add(rigR); rigR.rotation.set(VM_GUN.rot.x, VM_GUN.rot.y, VM_GUN.rot.z);
+    muz.add(flashSpr); flashSpr.position.set(0, 0, -0.01); flashSpr.scale.setScalar(0.12);
+    vmp.drum = drum; vmp.axis = 'z'; vmp.crane = crane;
+    // cigarette hand: lower left, ember + smoke on the modelled tip
+    hand.visible = false; sleeve2.visible = false; cig.visible = false; ember.visible = false;
+    cigRig.scale.setScalar(1); cigRig.rotation.set(0, 0, 0); CIG_HOME.copy(VM_CIG.pos); cigRig.add(rigL); rigL.rotation.set(VM_CIG.rot.x, VM_CIG.rot.y, VM_CIG.rot.z);
+    tip.add(emberGlow); emberGlow.position.set(0, 0, 0); emberGlow.scale.setScalar(0.034);
+    // ember: a small orange-red tip kept under the grade's halation threshold (no star/plus artefact), soft glow around it
+    scene.traverse(o => { if (o.isMesh && /ember/.test(o.material.name)) { o.material = new T.MeshBasicMaterial({ color: new T.Color(0.82, 0.24, 0.05) }); } });
+    tip.add(cigSmoke); cigSmoke.position.set(-0.087, -0.05, 0.02);
+    P.vmGLB = true;
+  }).catch(e => console.warn('[vm glb]', e));
 
   // ---------------------------------------------------------------- combat helpers
   function enemiesAlert() { return NR.actors.enemies.some(e => !e.dead && e.state !== 'dormant' && e.state !== 'idle'); }
@@ -82344,12 +82981,18 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const live = NR.core.state === 'PLAY' || NR.core.state === 'DOWN'; gunRig.visible = P.armed && !P.hideGun && live;
     const rel = P.reloadT > 0 ? Math.sin(Math.PI * (1 - P.reloadT / C.GUN_RELOAD)) : 0;
     gunRig.position.set(GUN_HOME.x + Math.sin(P.bob * 0.5) * 0.008 - rel * 0.06, GUN_HOME.y + Math.abs(Math.cos(P.bob * 0.5)) * 0.008 - rel * 0.05 + P.recoil * 0.015, GUN_HOME.z + P.recoil * 0.04);
-    gunRig.rotation.set(P.recoil * 0.22 + rel * 0.5, 0.1, rel * 0.9);
-    gun.userData.drum.rotation.y += rel > 0.1 ? rdt * 18 : 0;
+    if (vmp.crane) { // modelled gun: roll left, swing the cylinder out on the crane, spin it, swing it home
+      gunRig.rotation.set(P.recoil * 0.3 + rel * 0.35, P.vmGLB ? 0 : 0.1, rel * 0.75);
+      vmp.crane.rotation.z = Math.min(1, rel * 1.8) * 1.3;
+      vmp.drum.rotation.z += rel > 0.3 ? rdt * 16 : 0;
+    } else {
+      gunRig.rotation.set(P.recoil * 0.22 + rel * 0.5, 0.1, rel * 0.9);
+      vmp.drum.rotation.y += rel > 0.1 ? rdt * 18 : 0;
+    }
     flashT -= rdt; if (flashT <= 0) { flashSpr.visible = false; vmFlash.intensity = 0; }
     const lit = !!(P.litT > 0 || P.focusT > 0 || P.forceCig);
     cigRig.visible = lit && (live || P.forceCig);
-    if (lit) { const k = P.focusT > 0 ? 0.04 : 0; cigRig.position.set(CIG_HOME.x, CIG_HOME.y + k + Math.sin(P.bob * 0.5 + 1) * 0.006, CIG_HOME.z); emberGlow.material.opacity = 0.7 + Math.sin(NR.core.time * 9) * 0.3; }
+    if (lit) { const k = P.focusT > 0 ? 0.04 : 0; cigRig.position.set(CIG_HOME.x, CIG_HOME.y + k + Math.sin(P.bob * 0.5 + 1) * 0.006, CIG_HOME.z); emberGlow.material.opacity = 0.26 + Math.sin(NR.core.time * 9) * 0.08; }
   };
   P.reset = () => { P.rounds = C.GUN_ROUNDS; P.reloadT = 0; P.fireCd = 0; P.recoil = 0; P.litT = 0; P.focusT = 0; P.resetHealth(); };
 })();
@@ -82530,7 +83173,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 // NEON RAIN audio: John's score (assets/music/tracks.json) on two crossfading decks with a VO duck, seamless rain loops per scene
 // (OGG, MP3 fallback for iOS Safari), Media Session, and synthesized sfx (revolver, reload, lighter, heartbeat).
 (function () {
-  let ctx = null, master = null, sfxBus = null, unlocked = false, noiseBuf = null;
+  let ctx = null, master = null, sfxBus = null, unlocked = false, noiseBuf = null, humNodes = null;
   const S = () => NR.core.settings;
   function ensure() {
     if (ctx) return ctx;
@@ -82566,6 +83209,12 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     inhale() { noise(0.8, 'bandpass', 1400, 0.8, 0.07, 0.3, 0.8); },
     focus() { if (!ensure()) return; const t = ctx.currentTime; tone(220, 'sine', 0.25, 1.2, t, 70); noise(1.0, 'lowpass', 300, 0.7, 0.2, 0.05, 1.2, t); },
     clue() { if (!ensure()) return; const t = ctx.currentTime; tone(660, 'triangle', 0.12, 0.4, t); tone(990, 'triangle', 0.1, 0.5, t + 0.09); },
+    neonClick() { if (!ensure()) return; const t = ctx.currentTime; tone(1800, 'square', 0.05, 0.015, t); noise(0.03, 'highpass', 2500, 0.7, 0.12, 0.001, 0.05, t); tone(95, 'sawtooth', 0.05, 0.18, t + 0.01, 60); },
+    neonTick() { noise(0.02, 'bandpass', 3200, 2, 0.06, 0.001, 0.035); tone(120, 'sawtooth', 0.025, 0.08, null, 90); },
+    neonHum(on) { if (!ensure()) return; if (on && !humNodes) { const g = ctx.createGain(); g.gain.value = 0; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420;
+        const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 60; const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 120; const g2 = ctx.createGain(); g2.gain.value = 0.6;
+        o1.connect(f); o2.connect(g2); g2.connect(f); f.connect(g); g.connect(sfxBus); o1.start(); o2.start(); g.gain.setTargetAtTime(0.022, ctx.currentTime, 0.4); humNodes = { g, o1, o2 }; }
+      else if (!on && humNodes) { const h = humNodes; humNodes = null; h.g.gain.setTargetAtTime(0, ctx.currentTime, 0.3); setTimeout(() => { try { h.o1.stop(); h.o2.stop(); } catch (e) {} }, 1500); } },
     whizz() { if (!ensure()) return; const n = noise(0.18, 'bandpass', 2600, 6, 0.18, 0.03, 0.18); if (n) n.f.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.2); },
     heel() { tone(2600 + Math.random() * 300, 'triangle', 0.05, 0.03); noise(0.02, 'highpass', 3000, 0.7, 0.06, 0.001, 0.04); },
     step() { noise(0.02, 'lowpass', 500, 0.7, 0.12, 0.001, 0.08); },
@@ -82606,7 +83255,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   }
   function current() { const d = decks[deckOn]; return d ? d.el : null; }
   function setOnEnded(f) { onEnded = f; }
-  function duck(v) { duckV = v; if (musicBus) musicBus.gain.setTargetAtTime(S().music * v, ctx.currentTime, 0.25); else { const c = current(); if (c) c.volume = S().music * v; } }
+  function duck(v) { duckV = v; if (musicBus) musicBus.gain.setTargetAtTime(S().music * v, ctx.currentTime, 0.25); else { const c = current(); if (c) c.volume = S().music * v; } rainLevel(); }
   function mediaSession(t) {
     if (!('mediaSession' in navigator) || !t) return;
     try {
@@ -82622,17 +83271,45 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const RAIN_EXT = (() => { try { return new Audio().canPlayType('audio/ogg; codecs="vorbis"') ? '.ogg' : '.mp3'; } catch (e) { return '.mp3'; } })();
   function rainBuf(name) { if (!rainBufs[name]) rainBufs[name] = fetch(NR.ASSET + 'rain/' + name + RAIN_EXT).then(r => r.arrayBuffer()).then(b => new Promise((res, rej) => ctx.decodeAudioData(b, res, rej))); return rainBufs[name]; }
   // layers: [[name, gain], ...]
+  // Rain sits behind the score: its own bus, lowpassed (muffled; ~1 kHz inside the club), a high-shelf cut, and widened:
+  // each loop plays as two copies half a loop apart, panned hard left and hard right, so nothing sits in the centre.
+  // Level ~0.16 of the music bus, -3 dB more under VO, a little louder when no music plays.
+  let rainBus = null, rainLP = null, rainHS = null, rainMeter = null, musicMeter = null;
+  const RAIN_BASE = 0.16, RAIN_SILENT = 0.3, RAIN_VO = 0.7;
+  function rainChain() {
+    if (rainBus) return; rainLP = ctx.createBiquadFilter(); rainLP.type = 'lowpass'; rainLP.frequency.value = 2200; rainLP.Q.value = 0.5;
+    rainHS = ctx.createBiquadFilter(); rainHS.type = 'highshelf'; rainHS.frequency.value = 3000; rainHS.gain.value = -9;
+    rainBus = ctx.createGain(); rainBus.gain.value = RAIN_BASE * S().sfx; rainLP.connect(rainHS); rainHS.connect(rainBus); rainBus.connect(master);
+  }
+  function rainLevel() {
+    if (!rainBus) return; const c = current(), silent = !c || c.paused || c.ended;
+    const v = (silent ? RAIN_SILENT : RAIN_BASE) * (duckV < 1 ? RAIN_VO : 1) * S().sfx;
+    rainBus.gain.setTargetAtTime(v, ctx.currentTime, 0.5);
+  }
+  setInterval(() => { if (ctx) rainLevel(); }, 500);
+  // layers: [[name, gain], ...]; an optional layers.lp sets the lowpass cutoff (Hz)
   async function ambience(layers) {
-    if (!ensure()) return; const now = ctx.currentTime;
-    for (const n of rainNow) { n.g.gain.cancelScheduledValues(now); n.g.gain.setValueAtTime(n.g.gain.value, now); n.g.gain.linearRampToValueAtTime(0.0001, now + 2); const src = n.src; setTimeout(() => { try { src.stop(); } catch (e) {} }, 2200); }
+    if (!ensure()) return; rainChain(); const now = ctx.currentTime;
+    rainLP.frequency.setTargetAtTime(layers.lp || 2200, now, 0.5);
+    for (const n of rainNow) { n.g.gain.cancelScheduledValues(now); n.g.gain.setValueAtTime(n.g.gain.value, now); n.g.gain.linearRampToValueAtTime(0.0001, now + 2); const srcs = n.srcs; setTimeout(() => { for (const x of srcs) { try { x.stop(); } catch (e) {} } }, 2200); }
     rainNow = [];
     for (const [name, gain] of layers) {
       try {
-        const buf = await rainBuf(name), src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = buf; src.loop = true;
-        g.gain.value = 0.0001; src.connect(g); g.connect(sfxBus); src.start(0, Math.random() * buf.duration);
-        g.gain.linearRampToValueAtTime(gain, ctx.currentTime + 2); rainNow.push({ src, g });
+        const buf = await rainBuf(name), g = ctx.createGain(), srcs = [], off = Math.random() * buf.duration;
+        g.gain.value = 0.0001; g.connect(rainLP);
+        for (const [pan, shift] of [[-1, 0], [1, 0.5]]) { const src = ctx.createBufferSource(), p = ctx.createStereoPanner(); src.buffer = buf; src.loop = true; p.pan.value = pan; src.connect(p); p.connect(g); src.start(0, (off + shift * buf.duration) % buf.duration); srcs.push(src); }
+        g.gain.linearRampToValueAtTime(gain * 0.5, ctx.currentTime + 2); rainNow.push({ srcs, g });
       } catch (e) { console.warn('rain loop failed', name, e); }
     }
+    rainLevel();
+  }
+  // dev meter: RMS (dBFS) of the rain bus and the music bus over `secs` seconds
+  function meter(secs = 10) {
+    if (!ensure() || !rainBus) return Promise.resolve(null);
+    if (!rainMeter) { rainMeter = ctx.createAnalyser(); rainMeter.fftSize = 2048; rainBus.connect(rainMeter); musicMeter = ctx.createAnalyser(); musicMeter.fftSize = 2048; musicBusNode().connect(musicMeter); }
+    const buf = new Float32Array(2048); let rs = 0, ms = 0, n = 0;
+    return new Promise(res => { const iv = setInterval(() => { rainMeter.getFloatTimeDomainData(buf); for (const v of buf) rs += v * v; musicMeter.getFloatTimeDomainData(buf); for (const v of buf) ms += v * v; n += 2048; }, 50);
+      setTimeout(() => { clearInterval(iv); const db = x => +(10 * Math.log10(x / n + 1e-12)).toFixed(1); res({ rain: db(rs), music: db(ms), gap: +(db(ms) - db(rs)).toFixed(1) }); }, secs * 1000); });
   }
   function rainBed(on) { if (!on) ambience([]); }
   function playMusic(id) { return cue(id); }
@@ -82640,7 +83317,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     unlocked = true; ensure(); if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
     const c = current(); if (c && c.src) { const p = c.play(); if (p && p.catch) p.catch(() => {}); }
   }
-  function setVolumes() { if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; }
+  function setVolumes() { rainLevel(); if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; }
   function init() {
     const B = NR.bus;
     B.on('shot', () => fx.shot()); B.on('dryFire', () => fx.dry()); B.on('reload', () => fx.reload());
@@ -82648,7 +83325,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     B.on('enemyShot', d => { const P = NR.player; fx.enemyShot(P ? d.pos.distanceTo(P.pos) : 10); });
     B.on('smoke', () => { fx.lighter(); setTimeout(fx.inhale, 400); }); B.on('focus', () => fx.focus()); B.on('clue', () => fx.clue());
   }
-  NR.audio = { init, fx, unlock, playMusic, cue, duck, rainBed, ambience, setVolumes, loadTracks, current, setOnEnded, trackOf, get tracks() { return tracks; }, get cueId() { return cueId; }, get deckGains() { return decks.map(d => d.gain ? +d.gain.gain.value.toFixed(3) : null); }, get unlocked() { return unlocked; } };
+  NR.audio = { meter, init, fx, unlock, playMusic, cue, duck, rainBed, ambience, setVolumes, loadTracks, current, setOnEnded, trackOf, get tracks() { return tracks; }, get cueId() { return cueId; }, get deckGains() { return decks.map(d => d.gain ? +d.gain.gain.value.toFixed(3) : null); }, get unlocked() { return unlocked; } };
 })();
 
 </script>
@@ -82753,8 +83430,126 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
         { id: 'mother', q: 'Tell me about your mother.', a: 'My mother... She kept a garden. Roses, I think. Or I saw it in a picture once. Why does it matter?', mood: 'warm', pulse: 62, eye: 0.75, hes: 2.4 },
       ],
     },
-    end: { title: 'END OF THE SLICE', sub: 'CASE 01: THE GLASS SAINT\ncontinues in the rain market' },
+    end: { title: 'END OF CHAPTER ONE', sub: 'CASE 01: THE GLASS SAINT\ncontinues in the rain market' },
   };
+})();
+
+</script>
+<script>/* neon.js */
+// NEON RAIN title sign: a 1940s New York neon sign in SVG. Double-line block tube letters (red, white-hot core),
+// a white cursive script line, a dark sign box with brackets and bolts, glow spill on the wall behind, a red light
+// in the 3D scene that follows the sign's brightness, a startup sequence (tubes light letter by letter with a click),
+// an irregular flicker (the A in RAIN sputters and sometimes dies), and a hum. prefers-reduced-motion: steady glow.
+(function () {
+  const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // block letter outlines on a 60 x 80 grid (each subpath is one tube run)
+  const G = {
+    N: { w: 60, p: [[[0, 0], [14, 0], [46, 50], [46, 0], [60, 0], [60, 80], [46, 80], [14, 30], [14, 80], [0, 80]]] },
+    E: { w: 54, p: [[[0, 0], [54, 0], [54, 13], [14, 13], [14, 33], [44, 33], [44, 46], [14, 46], [14, 67], [54, 67], [54, 80], [0, 80]]] },
+    O: { w: 60, round: true },
+    R: { w: 60, p: [[[0, 0], [42, 0], [56, 8], [58, 22], [56, 36], [46, 44], [60, 80], [45, 80], [33, 46], [14, 46], [14, 80], [0, 80]], [[14, 13], [38, 13], [43, 17], [44, 24], [42, 31], [38, 34], [14, 34]]] },
+    A: { w: 60, p: [[[22, 0], [38, 0], [60, 80], [45, 80], [40, 62], [20, 62], [15, 80], [0, 80]], [[24, 49], [36, 49], [30, 23]]] },
+    I: { w: 16, p: [[[0, 0], [16, 0], [16, 80], [0, 80]]] },
+  };
+  const S = 0.78, GAP = 10;
+  function letterD(ch, x0, y0) {
+    const g = G[ch];
+    if (g.round) { // O: rounded outer and inner tube
+      const rr = (x, y, w, h, r) => `M${x + r},${y}H${x + w - r}A${r},${r} 0 0 1 ${x + w},${y + r}V${y + h - r}A${r},${r} 0 0 1 ${x + w - r},${y + h}H${x + r}A${r},${r} 0 0 1 ${x},${y + h - r}V${y + r}A${r},${r} 0 0 1 ${x + r},${y}Z`;
+      return rr(x0, y0, 60 * S, 80 * S, 24 * S) + rr(x0 + 14 * S, y0 + 14 * S, 32 * S, 52 * S, 11 * S);
+    }
+    return g.p.map(run => 'M' + run.map(([x, y]) => (x0 + x * S).toFixed(1) + ',' + (y0 + y * S).toFixed(1)).join('L') + 'Z').join('');
+  }
+  function word(w, cy) {
+    const width = [...w].reduce((a, c) => a + G[c].w * S, 0) + GAP * (w.length - 1); let x = 170 - width / 2; const out = [];
+    for (const c of w) { out.push(letterD(c, x, cy)); x += G[c].w * S + GAP; }
+    return out;
+  }
+  const RED = '#ff3a22', CORE = '#ffe6d6', DARK = '#140c0a';
+  function tube(d, id) { // concentric strokes: glow, red, white-hot core, red, dark gap = two parallel lit tubes
+    return `<g class="lt" id="${id}"><path class="dull" d="${d}"/><g class="lit"><path class="gl" d="${d}"/><path d="${d}" stroke="${RED}" stroke-width="8"/><path d="${d}" stroke="${CORE}" stroke-width="6.2"/><path d="${d}" stroke="${RED}" stroke-width="4.6"/></g><path d="${d}" stroke="${DARK}" stroke-width="3"/></g>`;
+  }
+  const CSS = `
+#nrneon{position:relative;width:80%;max-width:400px;margin:0 auto}
+#nrneon .spill{position:absolute;left:-30%;right:-30%;top:-25%;bottom:-35%;background:radial-gradient(ellipse at 50% 45%,rgba(255,40,20,.34),rgba(255,40,20,.12) 40%,transparent 68%);pointer-events:none;opacity:0;mix-blend-mode:screen}
+#nrneon svg{position:relative;display:block;width:100%;height:auto;overflow:visible}
+#nrneon text{fill:none}
+#nrneon text.plate{fill:#8a8070;font-family:"Courier New",monospace;font-size:9px;letter-spacing:4px}
+#nrneon path{fill:none;stroke-linejoin:round;stroke-linecap:round}
+#nrneon .dull{stroke:#4a1a14;stroke-width:8}
+#nrneon .gl{stroke:#ff2a14;stroke-width:12;filter:url(#nrblur);opacity:.85}
+#nrneon .lt .lit{transition:opacity .03s}
+#nrneon .lt.off .lit{opacity:0}
+#nrneon .lt.dim .lit{opacity:.45}
+#nrneon .lt .lit{filter:drop-shadow(0 0 3px rgba(255,60,30,.9)) drop-shadow(0 0 10px rgba(255,30,10,.6))}
+#nrneon .nscript .lit{filter:drop-shadow(0 0 3px rgba(255,240,225,.95)) drop-shadow(0 0 9px rgba(255,220,200,.5))}
+#nrneon .nscript text{font-family:"Snell Roundhand","Segoe Script","Brush Script MT","Lucida Handwriting",cursive;font-size:33px;font-style:italic}
+#nrneon .nscript .dull{stroke:#3a3430;stroke-width:3.2}
+#nrneon .case{position:absolute;left:0;right:0;bottom:-26px;text-align:center;font-family:"Courier New",monospace;font-size:11px;letter-spacing:.42em;color:#b8ac98;text-shadow:0 1px 3px #000}`;
+  let root = null, letters = [], script = null, spill = null, level = 0, running = false, started = false, raf = 0;
+  function mount(container) {
+    const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
+    const l1 = word('NEON', 36), l2 = word('RAIN', 116);
+    const ids = ['N1', 'E1', 'O1', 'N2', 'R2', 'A2', 'I2', 'N3'];
+    const bolts = [[22, 22], [318, 22], [22, 262], [318, 262]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3.2" fill="#6a6560"/><path d="M${x - 2},${y}H${x + 2}" stroke="#2a2724" stroke-width="1"/>`).join('');
+    const svg = `<svg viewBox="0 -24 340 312" aria-label="NEON RAIN, The Glass Saint">
+      <defs><filter id="nrblur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5"/></filter>
+        <linearGradient id="nrbox" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26221f"/><stop offset=".5" stop-color="#141210"/><stop offset="1" stop-color="#0a0908"/></linearGradient></defs>
+      <path d="M90,-24V12M250,-24V12" stroke="#3a3632" stroke-width="5"/><rect x="78" y="6" width="24" height="10" fill="#2a2724"/><rect x="238" y="6" width="24" height="10" fill="#2a2724"/>
+      <rect x="10" y="12" width="320" height="262" rx="10" fill="url(#nrbox)" stroke="#3e3934" stroke-width="3"/>
+      <rect x="18" y="20" width="304" height="246" rx="6" fill="none" stroke="#221e1b" stroke-width="2"/>${bolts}
+      ${[...l1, ...l2].map((d, i) => tube(d, ids[i])).join('')}
+      <g class="lt nscript" id="S1"><text class="dull" x="170" y="246" text-anchor="middle" textLength="250" lengthAdjust="spacingAndGlyphs">The Glass Saint</text>
+        <g class="lit"><text x="170" y="246" text-anchor="middle" textLength="250" lengthAdjust="spacingAndGlyphs" fill="none" stroke="#ffd9c4" stroke-width="3.2" opacity=".55">The Glass Saint</text><text x="170" y="246" text-anchor="middle" textLength="250" lengthAdjust="spacingAndGlyphs" fill="none" stroke="#fffaf4" stroke-width="1.4">The Glass Saint</text></g></g>
+      <text class="plate" x="170" y="267" text-anchor="middle">CASE 01</text>
+      </svg>`;
+    container.innerHTML = '<div id="nrneon"><div class="spill"></div>' + svg + '</div>';
+    root = container.querySelector('#nrneon'); spill = root.querySelector('.spill');
+    letters = ids.map(id => root.querySelector('#' + id)); script = root.querySelector('#S1');
+    for (const l of [...letters, script]) l.classList.add('off');
+  }
+  const A = () => NR.audio && NR.audio.fx;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  async function start() {
+    if (started) return; started = true; running = true;
+    if (A() && A().neonHum) A().neonHum(true);
+    if (RM) { for (const l of [...letters, script]) l.classList.remove('off'); level = 1; tick(); return; }
+    // startup: each tube catches with a click and a short sputter, then the script, then the whole sign sags once
+    for (const l of [...letters, script]) {
+      await wait(140 + Math.random() * 120); if (A()) A().neonClick();
+      for (let k = 0; k < 2 + (Math.random() * 3 | 0); k++) { l.classList.remove('off'); await wait(30 + Math.random() * 50); l.classList.add('off'); await wait(30 + Math.random() * 70); }
+      l.classList.remove('off');
+    }
+    root.style.transition = 'opacity .12s'; root.style.opacity = .55; await wait(160); root.style.opacity = 1;
+    tick();
+  }
+  // flicker: the A in RAIN sputters and sometimes dies for a beat; the whole sign dips now and then with a tick
+  let aState = 'on', aT = 0, dipT = 0, last = performance.now();
+  function tick() {
+    cancelAnimationFrame(raf);
+    const step = (now) => {
+      raf = requestAnimationFrame(step); if (!running) return;
+      const dt = Math.min(0.1, (now - last) / 1000); last = now;
+      let lv = 1;
+      if (!RM) {
+        const a = letters[5];
+        aT -= dt;
+        if (aState === 'on' && Math.random() < dt * 0.35) { aState = Math.random() < 0.25 ? 'dead' : 'sputter'; aT = aState === 'dead' ? 0.7 + Math.random() * 0.9 : 0.25 + Math.random() * 0.5; if (A()) A().neonTick(); }
+        if (aState === 'sputter') { const on = Math.random() < 0.55; a.classList.toggle('off', !on); a.classList.toggle('dim', on && Math.random() < 0.4); if (Math.random() < dt * 8 && A()) A().neonTick(); }
+        if (aState === 'dead') a.classList.add('off');
+        if (aT <= 0 && aState !== 'on') { aState = 'on'; a.classList.remove('off', 'dim'); }
+        dipT -= dt; if (dipT <= 0 && Math.random() < dt * 0.12) { dipT = 0.07 + Math.random() * 0.08; if (A()) A().neonTick(); }
+        if (dipT > 0) lv = 0.6;
+        if (aState !== 'on') lv *= 0.9;
+        root.style.opacity = lv;
+      }
+      level = lv * (0.9 + Math.sin(now / 90) * 0.02);
+      spill.style.opacity = (level * 0.95).toFixed(3);
+    };
+    raf = requestAnimationFrame(step);
+  }
+  function stop() { running = false; cancelAnimationFrame(raf); level = 0; if (A() && A().neonHum) A().neonHum(false); }
+  NR.neon = { mount, start, stop, get level() { return running ? level : 0; }, get started() { return started; }, get aState() { return aState; }, reducedMotion: RM };
 })();
 
 </script>
@@ -82818,7 +83613,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 #nru .btn.red{border-color:#b8241c;color:#ffd8cc;box-shadow:0 0 12px rgba(184,36,28,.5)}
 #nru .btn:active{background:rgba(234,223,202,.2)}
 #nru .title{background:radial-gradient(ellipse at 50% 35%,rgba(0,0,0,.05),rgba(0,0,0,.75) 80%)}
-#nru .logo{font-family:Georgia,serif;font-weight:bold;font-size:58px;letter-spacing:.08em;line-height:1;color:#fff4ea;text-shadow:0 0 6px #ff4a3a,0 0 22px #d8261a,0 0 44px #b8241c;margin-top:-50vh}
+#nru .logo{font-family:Georgia,serif;font-weight:bold;font-size:58px;letter-spacing:.08em;line-height:1;color:#fff4ea;margin-top:-46vh;width:100%}
 #nru .logo small{display:block;font-size:13px;letter-spacing:.42em;color:#eadfca;text-shadow:0 1px 3px #000;margin-top:18px;font-weight:normal}
 #nru .logo em{display:block;font-style:italic;font-size:22px;letter-spacing:.06em;color:#eadfca;text-shadow:0 1px 4px #000;margin-top:8px;font-weight:normal}
 #nru .menu{position:absolute;left:0;right:0;bottom:9%}
@@ -82944,7 +83739,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     E.card = h('div', 'card', '<div class="fr"></div>'); E.cardT = E.card.querySelector('.fr');
     E.tut = h('div', 'tut', '<h3></h3><p></p><div class="go">TAP TO CONTINUE &#x25B8;</div>');
     // screens
-    E.title = h('div', 'scr title', '<div class="logo">NEON RAIN<em>The Glass Saint</em><small>CASE 01</small></div><div class="menu"></div><div class="foot">GREY-BOX SLICE</div>');
+    E.title = h('div', 'scr title', '<div class="logo"></div><div class="menu"></div>');
+    NR.neon.mount(E.title.querySelector('.logo'));
     const menu = E.title.querySelector('.menu');
     E.begin = h('div', 'btn red', 'BEGIN CASE', menu); E.jbBtn = h('div', 'btn', 'JUKEBOX', menu); E.setBtn = h('div', 'btn', 'SETTINGS', menu);
     onTap(E.jbBtn, () => NR.jukebox.open());
@@ -82970,7 +83766,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const s = core.settings, rows = E.set.querySelector('.rows'); rows.innerHTML = '';
     const row = (label, val, dec, inc) => { const r = h('div', 'row', '<span>' + label + '</span><div class="v"></div>', rows); const v = r.querySelector('.v');
       if (dec) onTap(h('b', '', '&minus;', v), () => { dec(); settingsOpen(true); }); h('span', '', val, v); onTap(h('b', '', inc && dec ? '+' : '&#x21C4;', v), () => { (inc || dec)(); settingsOpen(true); }); };
-    row('B&amp;W + RED', s.bw ? 'ON' : 'OFF', null, () => { s.bw = !s.bw; core.saveSettings(); });
+    row('FILM', s.film === 'bwred' ? 'B&amp;W RED' : 'NOIR COLOR', null, () => { s.film = s.film === 'bwred' ? 'noir' : 'bwred'; s.bw = s.film === 'bwred'; core.saveSettings(); });
     row('MUSIC', Math.round(s.music * 10), () => { s.music = Math.max(0, +(s.music - 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); }, () => { s.music = Math.min(1, +(s.music + 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); });
     row('SOUND', Math.round(s.sfx * 10), () => { s.sfx = Math.max(0, +(s.sfx - 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); }, () => { s.sfx = Math.min(1, +(s.sfx + 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); });
     row('LOOK SPEED', (s.sens || 1).toFixed(1), () => { s.sens = Math.max(0.4, +((s.sens || 1) - 0.1).toFixed(1)); core.saveSettings(); }, () => { s.sens = Math.min(2.5, +((s.sens || 1) + 0.1).toFixed(1)); core.saveSettings(); });
@@ -83489,8 +84285,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   async function run() {
     await UI.gate();
-    NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club);
-    G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null);
+    NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club); NR.neon.start();
+    G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null); NR.neon.stop();
     G.t0 = performance.now(); G.titleCam = false;
     await core.fadeTo(1, 0.6);
     const skip = new URLSearchParams(location.search).get('beat'); // dev: ?beat=alley or ?beat=club
@@ -83513,8 +84309,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     if (inp.caseFile) { if (st === 'PLAY' || st === 'PAUSE') G.openCase(); else if (st === 'CASE') G.closeCase(); }
     for (let i = G.waits.length - 1; i >= 0; i--) { let ok = false; try { ok = G.waits[i].cond(); } catch (e) { console.error(e); } if (ok) { const w = G.waits[i]; G.waits.splice(i, 1); w.r(); } }
     const frozen = st === 'PAUSE' || st === 'CASE' || st === 'INTERRO' || st === 'END';
-    if (G.titleCam) { const cam = core.camera, t = core.time; cam.position.set(0.6 + Math.sin(t * 0.07) * 0.7, 1.7 + Math.sin(t * 0.11) * 0.06, -9.5 - Math.sin(t * 0.05) * 1.0); cam.rotation.set(0.1 + Math.sin(t * 0.13) * 0.01, 0.2 + Math.sin(t * 0.06) * 0.04, 0); P.controlled = true; }
-    else P.controlled = false;
+    if (G.titleCam) { const cam = core.camera, t = core.time; cam.position.set(0.6 + Math.sin(t * 0.07) * 0.7, 1.7 + Math.sin(t * 0.11) * 0.06, -9.5 - Math.sin(t * 0.05) * 1.0); cam.rotation.set(0.1 + Math.sin(t * 0.13) * 0.01, 0.2 + Math.sin(t * 0.06) * 0.04, 0); P.controlled = true; if (G.level && G.level.signLight) G.level.signLight.intensity = NR.neon.level * 26; }
+    else { P.controlled = false; if (levels.club && levels.club.signLight && levels.club.signLight.intensity) levels.club.signLight.intensity = 0; }
     if (!frozen) {
       if (G.lookTarget && st !== 'PLAY') { const p = typeof G.lookTarget === 'function' ? G.lookTarget() : G.lookTarget; const [y, pt] = yawPitchTo(p); let dy = y - P.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const k = Math.min(1, rdt * (G.lookRate || 4)); P.yaw += dy * k; P.pitch += (pt - P.pitch) * k; }
       let input = st === 'PLAY' ? inp : noInput;

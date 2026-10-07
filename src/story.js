@@ -98,6 +98,6 @@
         { id: 'mother', q: 'Tell me about your mother.', a: 'My mother... She kept a garden. Roses, I think. Or I saw it in a picture once. Why does it matter?', mood: 'warm', pulse: 62, eye: 0.75, hes: 2.4 },
       ],
     },
-    end: { title: 'END OF THE SLICE', sub: 'CASE 01: THE GLASS SAINT\ncontinues in the rain market' },
+    end: { title: 'END OF CHAPTER ONE', sub: 'CASE 01: THE GLASS SAINT\ncontinues in the rain market' },
   };
 })();

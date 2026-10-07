@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>NEON RAIN cast turntable</title>
+<style>html,body{margin:0;background:#07070a;overflow:hidden}canvas{display:block}</style></head>
+<body>
+<script src="../src/vendor/three.global.js"></script>
+<script>window.NR = { ASSET: '../assets/' };</script>
+<script src="../src/cast.js"></script>
+<script>
+// Turntable rig for tests/cast_sheet.py: window.shot(variant, angleDeg, clip, close, t) poses one cast member under noir light.
+const T = THREE, W = 300, H = 520;
+const renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(W, H); renderer.outputColorSpace = T.SRGBColorSpace; renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+const scene = new T.Scene(); scene.background = new T.Color(0x0a0a0d); scene.fog = new T.FogExp2(0x0a0a0d, 0.04);
+const cam = new T.PerspectiveCamera(30, W / H, 0.05, 50);
+scene.add(new T.HemisphereLight(0x2a3040, 0x140c08, 1.2));
+const key = new T.SpotLight(0xffb060, 60, 12, 0.6, 0.5, 1.4); key.position.set(-1.8, 3.4, 2.4); key.castShadow = true; scene.add(key, key.target);
+const rim = new T.SpotLight(0x40c8ff, 50, 12, 0.7, 0.5, 1.4); rim.position.set(2.2, 2.6, -2.4); scene.add(rim, rim.target);
+const fill = new T.PointLight(0xff5030, 6, 8, 1.5); fill.position.set(2.5, 1.2, 2.0); scene.add(fill);
+const floor = new T.Mesh(new T.CircleGeometry(3, 48), new T.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.35, metalness: 0.0 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+let cur = null; const tpls = {};
+window.READY = false;
+Promise.all(Object.keys(NR.cast.URL).map(f => NR.cast.family(NR.ASSET + NR.cast.URL[f]).then(t => { tpls[f] = t; }))).then(() => { window.READY = true; });
+window.shot = (variant, ang, clip, close, t) => {
+  if (cur) scene.remove(cur.root);
+  const r = new NR.cast.Rig(tpls[NR.cast.FAMILY[variant]], variant); cur = r;
+  r.full(clip || 'idle', 0, false); r.mixer.setTime(t || 0.4); r.root.rotation.y = ang * Math.PI / 180; scene.add(r.root);
+  r.root.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  r.root.updateMatrixWorld(true);
+  const head = r.bones.head.getWorldPosition(new T.Vector3());
+  if (close) { cam.fov = 18; cam.aspect = W / H; cam.position.set(0, head.y + 0.08, 1.15); cam.lookAt(0, head.y + 0.07, 0); }
+  else { cam.fov = 30; cam.position.set(0, 1.0, 4.9); cam.lookAt(0, 0.98, 0); }
+  cam.updateProjectionMatrix(); key.target.position.set(0, 1, 0); rim.target.position.set(0, 1.2, 0);
+  renderer.render(scene, cam);
+  return true;
+};
+</script>
+</body></html>

@@ -146,6 +146,7 @@ def main():
         until("NR.game.beat === 'office_smoke' && NR.core.state === 'PLAY'", 120, hook=lambda: [h() for h in hooks])
         wait(400); press("smoke"); wait(900); shot("smoke", "She lights his cigarette (SMOKE)")
         until("NR.game.beat === 'office_play' && NR.core.state === 'PLAY'", 90)
+        go([(-0.1, 0.45)], timeout=20)  # the env pass starts Harrow 1.2 m behind his chair: step up to the desk
         face({"x": -0.12, "y": 0.8, "z": -0.35}); wait(900)
         press("interact"); until("NR.player.armed && NR.core.state === 'PLAY'", 20); face(None)
         wait(300); shot("revolver", "Revolver taken; touch HUD")

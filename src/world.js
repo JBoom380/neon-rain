@@ -402,6 +402,7 @@
     glow(0xe0eaff, 0.8, 1.0, RH - 0.15, -11.5, S);
     L.sideLight = { ambient: 0x606070, key: 0xe8f0ff, warm: 0x5a2010 };
     if (NR.fx) { S.add(NR.fx.smoke(90, V3(-0.5, 0.8, -12), { rise: 2.6, spread: 4.0, size: 420, alpha: 0.03, life: 34 }, L.shaft)); }
+    L.signLight = new T.PointLight(0xff2a14, 0, 18, 1.2); L.signLight.position.set(0.6, 3.8, -10.5); S.add(L.signLight); // the title sign's red cast
     L.spawn = { pos: V3(0, 0, -0.6), yaw: 0 };
     L.doloresPos = V3(5.6, 0, -16.6);
     L.finish(); return L;

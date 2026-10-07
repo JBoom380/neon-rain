@@ -252,8 +252,8 @@
 
   async function run() {
     await UI.gate();
-    NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club);
-    G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null);
+    NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club); NR.neon.start();
+    G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null); NR.neon.stop();
     G.t0 = performance.now(); G.titleCam = false;
     await core.fadeTo(1, 0.6);
     const skip = new URLSearchParams(location.search).get('beat'); // dev: ?beat=alley or ?beat=club
@@ -276,8 +276,8 @@
     if (inp.caseFile) { if (st === 'PLAY' || st === 'PAUSE') G.openCase(); else if (st === 'CASE') G.closeCase(); }
     for (let i = G.waits.length - 1; i >= 0; i--) { let ok = false; try { ok = G.waits[i].cond(); } catch (e) { console.error(e); } if (ok) { const w = G.waits[i]; G.waits.splice(i, 1); w.r(); } }
     const frozen = st === 'PAUSE' || st === 'CASE' || st === 'INTERRO' || st === 'END';
-    if (G.titleCam) { const cam = core.camera, t = core.time; cam.position.set(0.6 + Math.sin(t * 0.07) * 0.7, 1.7 + Math.sin(t * 0.11) * 0.06, -9.5 - Math.sin(t * 0.05) * 1.0); cam.rotation.set(0.1 + Math.sin(t * 0.13) * 0.01, 0.2 + Math.sin(t * 0.06) * 0.04, 0); P.controlled = true; }
-    else P.controlled = false;
+    if (G.titleCam) { const cam = core.camera, t = core.time; cam.position.set(0.6 + Math.sin(t * 0.07) * 0.7, 1.7 + Math.sin(t * 0.11) * 0.06, -9.5 - Math.sin(t * 0.05) * 1.0); cam.rotation.set(0.1 + Math.sin(t * 0.13) * 0.01, 0.2 + Math.sin(t * 0.06) * 0.04, 0); P.controlled = true; if (G.level && G.level.signLight) G.level.signLight.intensity = NR.neon.level * 26; }
+    else { P.controlled = false; if (levels.club && levels.club.signLight && levels.club.signLight.intensity) levels.club.signLight.intensity = 0; }
     if (!frozen) {
       if (G.lookTarget && st !== 'PLAY') { const p = typeof G.lookTarget === 'function' ? G.lookTarget() : G.lookTarget; const [y, pt] = yawPitchTo(p); let dy = y - P.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const k = Math.min(1, rdt * (G.lookRate || 4)); P.yaw += dy * k; P.pitch += (pt - P.pitch) * k; }
       let input = st === 'PLAY' ? inp : noInput;

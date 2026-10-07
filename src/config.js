@@ -9,7 +9,8 @@ NR.cfg = {
   SETTINGS_KEY: 'neonRainFps.settings', CASE_KEY: 'neonRainFps.case',
 };
 NR.ASSET = document.querySelector('script[src="config.js"]') ? '../assets/' : 'assets/'; // dev.html lives in src/
-NR.RAIN = { office: [['rain_05_int_window_close', 1.0]], alley: [['rain_13_ext_alley_gutter', 0.9], ['rain_10_ext_heavy_downpour', 0.6]], club: [['rain_09_int_heavy_rain_through_walls', 1.0]] }; // ambience per scene
+NR.RAIN = { office: [['rain_05_int_window_close', 2.0]], alley: [['rain_13_ext_alley_gutter', 0.9], ['rain_10_ext_heavy_downpour', 0.6]], club: [['rain_09_int_heavy_rain_through_walls', 2.0]] }; // ambience per scene
+NR.RAIN.club.lp = 1000; NR.RAIN.office.lp = 2000; NR.RAIN.alley.lp = 2400; // muffled rain: lowpass cutoff per scene
 NR.SPRITE = (who, name) => NR.ASSET + 'sprites/' + who + '_' + name + '.webp';
 NR.CLOSE = (who, mood) => NR.ASSET + 'sprites/' + who + '_close_' + mood + '.jpg';
 NR.rng = (seed) => { let s = (seed >>> 0) || 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; };

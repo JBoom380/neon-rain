@@ -1,6 +1,7 @@
 // NEON RAIN minimal GLB loader (the three r186 global build has no GLTFLoader): node tree, meshes, PBR materials
 // (base colour, textures, alpha blend), skins (SkinnedMesh + Skeleton) and animations (AnimationClip). Enough for the
-// character GLBs exported from Blender; no sparse accessors, no byte strides, no Draco.
+// character GLBs exported from Blender, plus the baked environment GLBs (TEXCOORD_1, emissive maps, material and scene
+// extras); no sparse accessors, no byte strides, no Draco.
 (function () {
   const T = THREE;
   const TA = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array, 5121: Uint8Array, 5122: Int16Array, 5120: Int8Array };
@@ -20,6 +21,8 @@
         metalness: pb.metallicFactor == null ? 1 : pb.metallicFactor, roughness: pb.roughnessFactor == null ? 1 : pb.roughnessFactor,
         map: tex(pb.baseColorTexture, true), side: md.doubleSided ? T.DoubleSide : T.FrontSide });
       if (md.emissiveFactor) m.emissive.setRGB(...md.emissiveFactor, T.LinearSRGBColorSpace);
+      if (md.emissiveTexture) { m.emissiveMap = tex(md.emissiveTexture, true); m.userData.emissiveTexCoord = md.emissiveTexture.texCoord || 0; } // env GLBs: texCoord 1 = baked lightmap
+      m.userData.extras = md.extras || {}; if (pb.baseColorTexture) m.userData.mapTexCoord = pb.baseColorTexture.texCoord || 0;
       if (md.extensions && md.extensions.KHR_materials_emissive_strength) m.emissiveIntensity = md.extensions.KHR_materials_emissive_strength.emissiveStrength;
       if (md.alphaMode === 'BLEND') { m.transparent = true; m.depthWrite = false; m.alphaTest = 0.08; }
       if (md.alphaMode === 'MASK') m.alphaTest = md.alphaCutoff == null ? 0.5 : md.alphaCutoff;
@@ -33,7 +36,7 @@
       if (n.mesh === undefined) return;
       for (const p of json.meshes[n.mesh].primitives) {
         const g = new T.BufferGeometry(), A = p.attributes;
-        g.setAttribute('position', attr(A.POSITION)); if (A.NORMAL !== undefined) g.setAttribute('normal', attr(A.NORMAL)); if (A.TEXCOORD_0 !== undefined) g.setAttribute('uv', attr(A.TEXCOORD_0));
+        g.setAttribute('position', attr(A.POSITION)); if (A.NORMAL !== undefined) g.setAttribute('normal', attr(A.NORMAL)); if (A.TEXCOORD_0 !== undefined) g.setAttribute('uv', attr(A.TEXCOORD_0)); if (A.TEXCOORD_1 !== undefined) g.setAttribute('uv1', attr(A.TEXCOORD_1));
         if (A.JOINTS_0 !== undefined) g.setAttribute('skinIndex', attr(A.JOINTS_0)); if (A.WEIGHTS_0 !== undefined) g.setAttribute('skinWeight', attr(A.WEIGHTS_0));
         if (p.indices !== undefined) g.setIndex(attr(p.indices));
         if (A.NORMAL === undefined) g.computeVertexNormals();
@@ -58,7 +61,7 @@
       }
       return new T.AnimationClip(a.name, -1, tracks);
     });
-    return { scene: root, animations: clips, materials: mats };
+    return { scene: root, animations: clips, materials: mats, extras: json.scenes[json.scene || 0].extras || {} };
   }
   NR.gltf = { load };
 })();

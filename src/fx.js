@@ -24,9 +24,13 @@
     part(new T.BoxGeometry(0.03, 0.085, 0.034), wood, 0, -0.045, 0.065, 0.35);                    // grip
     const tg = part(new T.TorusGeometry(0.015, 0.003, 5, 10, Math.PI), blued, 0, -0.012, 0.012, 0, Math.PI / 2, Math.PI); void tg;
     g.userData.drum = drum; g.userData.inner = inner;
-    if (lying) inner.rotation.x = 0;
+    if (lying) { inner.rotation.x = 0; if (revAsset) swapRevolver(g); else lyingGuns.push(g); }
     return g;
   }
+  // the modelled revolver (assets/models/vm_revolver.glb, loaded by player.js) replaces the code model on desks/props
+  let revAsset = null; const lyingGuns = [];
+  function swapRevolver(g) { const m = revAsset.clone(true); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); g.userData.inner.visible = false; g.add(m); }
+  function useRevolverAsset(node) { revAsset = node; for (const g of lyingGuns.splice(0)) swapRevolver(g); }
   function hatModel(color) {
     const hat = new T.Group(); const m = new T.MeshLambertMaterial({ color });
     const brimPts = []; for (let i = 0; i <= 6; i++) { const r = 0.11 + i * 0.0165; brimPts.push(new T.Vector2(r, 0.008 + 0.012 * Math.pow(i / 6, 2))); }
@@ -178,5 +182,5 @@
     if (flashT > 0) { flashT -= rdt; if (flashT <= 0) flashLight.intensity = 0; }
   }
 
-  NR.fx = { U, revolverModel, hatModel, smoke, rain, attach, blood, impact, pool, tracer, muzzle, update, BLOOD, canvasTex };
+  NR.fx = { U, revolverModel, useRevolverAsset, hatModel, smoke, rain, attach, blood, impact, pool, tracer, muzzle, update, BLOOD, canvasTex };
 })();

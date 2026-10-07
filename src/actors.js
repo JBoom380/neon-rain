@@ -1,4 +1,5 @@
-// NEON RAIN actors: painted billboard characters (8 view angles + idle frames) and grey-box enemies with cover AI.
+// NEON RAIN actors: painted billboard characters (8 view angles + idle frames) and enemies with cover AI.
+// Enemies and Miles Corran are rigged 3D people from src/cast.js (block figures only while the GLB is still loading).
 (function () {
   const T = THREE, V3 = (x, y, z) => new T.Vector3(x, y, z), C = NR.cfg;
 
@@ -174,6 +175,8 @@
     constructor(level, o) {
       this.id = nextId++; this.level = level; this.type = o.type || 'gunman'; this.kind = o.kind || 'human';
       this.style = o.style || (this.type === 'thug' ? 'thug' : 'gale');
+      this.variant = this.kind === 'artificial' ? 'synth' : this.style === 'thugGun' ? 'thug_c' : this.style === 'thug' ? (o.flashlight ? 'thug_b' : 'thug_a') : ['gale_a', 'gale_b', 'gale_c'][Enemy.galeN++ % 3];
+      this.hs = this.variant === 'synth' ? 1.1 : 1; // the artificial man stands 2 m tall
       const f = buildFigure(STYLES[this.style]); Object.assign(this, f);
       this.pos = o.pos.clone(); this.yaw = o.yaw || 0; this.hp = o.hp || (this.type === 'thug' ? 70 : 100); this.maxHp = this.hp;
       this.state = o.dormant ? 'dormant' : 'idle'; this.t = 0; this.cover = null; this.crouch = 0; this.peekOff = V3(0, 0, 0); this.peekAmt = 0;
@@ -188,17 +191,33 @@
       // muzzle glint: telegraphs a shot ~0.4 s before it comes
       this.glint = NR.world.glow(0xfff6e0, 0.32, 0, 0.05, 0.74, this.arm); this.glint.visible = false; this.glint.material.depthTest = true;
       this.group.position.copy(this.pos); this.group.rotation.y = this.yaw; level.scene.add(this.group);
-      this.fallAxis = V3(1, 0, 0);
+      this.fallAxis = V3(1, 0, 0); this.prev = this.pos.clone(); this.vel = V3(0, 0, 0);
+      this.cr = null; const tpl = NR.cast && NR.cast.ready(this.variant);
+      if (tpl) this.useRig(tpl); else if (NR.cast) NR.cast.family(NR.ASSET + NR.cast.URL[NR.cast.FAMILY[this.variant]]).then(t => { if (!this.removed && t) this.useRig(t); }, () => {});
     }
-    get eye() { return V3(this.pos.x, 1.5 - 0.48 * this.crouch, this.pos.z).add(this.peekOff); }
-    get headC() { return V3(this.pos.x + this.peekOff.x, 1.66 - 0.45 * this.crouch, this.pos.z + this.peekOff.z); }
+    useRig(tpl) { // swap the block figure for the rigged person
+      const r = new NR.cast.Rig(tpl, this.variant); this.cr = r;
+      for (const m of [this.legs, this.upper]) this.group.remove(m);
+      this.group.add(r.root);
+      if (this.glint && this.glint.parent) this.glint.parent.remove(this.glint);
+      this.glint = NR.world.glow(0xfff6e0, 0.32, 0, 0, 0, r.muzzle || r.bones.handR); this.glint.visible = false; this.glint.material.depthTest = true;
+      if (this.type === 'thug' && r.lampTip) {
+        let cone = null; this.upper.traverse(c => { if (c.isMesh && c.geometry.type === 'ConeGeometry') cone = c; });
+        if (cone) { cone.parent.remove(cone); this.group.add(cone); cone.rotation.set(0, 0, 0); this.cone = cone; }
+        NR.world.glow(0xfff0c0, 0.5, 0, 0, 0, r.lampTip);
+      }
+      if (this.dead) { r.full(this.deathClip || 'die_back', 0); r.update(5); }
+    }
+    get headY() { return 1.66 * this.hs; }
+    get eye() { return V3(this.pos.x, 1.5 * this.hs - 0.48 * this.crouch, this.pos.z).add(this.peekOff); }
+    get headC() { return V3(this.pos.x + this.peekOff.x, this.headY - 0.45 * this.crouch, this.pos.z + this.peekOff.z); }
     // ray hit test against head sphere and body cylinder; returns {t, head, point}
     hitTest(o, d, maxT) {
       if (this.dead) return null;
       const hc = this.headC, oc = o.clone().sub(hc), b = oc.dot(d), c = oc.lengthSq() - 0.15 * 0.15, disc = b * b - c;
       let best = null;
       if (disc >= 0) { const t = -b - Math.sqrt(disc); if (t > 0 && t < maxT) best = { t, head: true }; }
-      const bx = this.pos.x + this.peekOff.x, bz = this.pos.z + this.peekOff.z, top = 1.5 - 0.45 * this.crouch, r = 0.27;
+      const bx = this.pos.x + this.peekOff.x, bz = this.pos.z + this.peekOff.z, top = 1.5 * this.hs - 0.45 * this.crouch, r = 0.27;
       const ox = o.x - bx, oz = o.z - bz, A = d.x * d.x + d.z * d.z, Bq = 2 * (ox * d.x + oz * d.z), Cq = ox * ox + oz * oz - r * r, D = Bq * Bq - 4 * A * Cq;
       if (A > 1e-9 && D >= 0) { const t = (-Bq - Math.sqrt(D)) / (2 * A); if (t > 0 && t < maxT) { const y = o.y + d.y * t; if (y > 0 && y < top && (!best || t < best.t)) best = { t, head: false }; } }
       if (best) best.point = o.clone().addScaledVector(d, best.t);
@@ -207,19 +226,36 @@
     damage(amount, point, dir, head) {
       if (this.dead) return false;
       this.hp -= amount; this.flinch = 0.28; this.aimT = 0; this.mat && 0;
-      NR.fx.blood(point, dir, this.kind, head ? 1.6 : 1.0, head ? this.upper : (point.y < 0.86 ? this.legs : this.upper));
+      if (this.cr) { // the wound sits on the body surface, on the bone that was hit; the body reacts to the side it was hit from
+        const b = this.cr.bones, part = head ? b.head : point.y < 0.86 * this.hs ? (this.legSide(point) > 0 ? b.thighL : b.thighR) : b.spine2;
+        const c = part.getWorldPosition(V3(0, 0, 0)); if (head) c.y += 0.1;
+        const out = V3(point.x - c.x, 0, point.z - c.z); if (out.lengthSq() < 1e-6) out.set(-dir.x, 0, -dir.z); out.normalize();
+        const p2 = c.clone().addScaledVector(out, head ? 0.1 : part === b.spine2 ? 0.14 : 0.08); p2.y = head ? c.y : Math.min(Math.max(point.y, c.y - 0.25), c.y + 0.3);
+        NR.fx.blood(p2, dir, this.kind, head ? 1.6 : 1.0, part);
+        const f = V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), side = f.x * dir.z - f.z * dir.x;
+        this.cr.additive(Math.abs(side) < 0.5 ? 'hit_front' : side > 0 ? 'hit_left' : 'hit_right', head ? 1.3 : 1);
+      } else NR.fx.blood(point, dir, this.kind, head ? 1.6 : 1.0, head ? this.upper : (point.y < 0.86 ? this.legs : this.upper));
       if (this.state === 'dormant' || this.state === 'idle') this.alert();
       if (this.hp <= 0) { this.die(dir, head); return true; }
       return false;
     }
+    legSide(p) { const r = V3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); return -((p.x - this.pos.x) * r.x + (p.z - this.pos.z) * r.z); }
     alert() { if (this.dead) return; if (this.state === 'dormant' || this.state === 'idle') { this.state = this.entry ? 'enter' : (this.type === 'thug' ? 'rush' : 'engage'); this.t = 0; } }
     die(dir, head) {
       this.dead = true; this.state = 'dead'; this.deadT = 0; if (this.cover) { this.cover.taken = null; this.cover = null; }
       this.fallAxis = V3(dir.z, 0, -dir.x).normalize(); this.fallFrom = this.group.quaternion.clone();
+      const fwd = Math.sin(this.yaw) * dir.x + Math.cos(this.yaw) * dir.z; // > 0: shot from behind
+      this.deathClip = fwd > 0.3 ? 'die_fwd' : (head && Math.random() < 0.5) || Math.random() < 0.25 ? 'die_slip' : 'die_back';
+      if (this.cr) { this.cr.full(this.deathClip, 0.1, true); this.glint.visible = false; if (this.cone) this.cone.visible = false; }
       NR.bus.emit('enemyDown', { enemy: this, head });
     }
     update(dt, P) {
       const L = this.level; this.t += dt;
+      if (this.dead && this.cr) {
+        this.deadT += dt; this.cr.update(dt);
+        if (!this.pooled && this.deadT > 1.1) { this.pooled = true; const h = this.cr.bones.hips.getWorldPosition(V3(0, 0, 0)); NR.fx.pool(V3(h.x, 0, h.z), this.kind); }
+        return;
+      }
       if (this.dead) {
         if (this.deadT < 1) {
           this.deadT += dt; const k = Math.min(1, this.deadT / 0.55), e = k * k;
@@ -295,6 +331,7 @@
       this.crouch += (crouchT - this.crouch) * Math.min(1, dt * 9);
       this.peekAmt += (peekT - this.peekAmt) * Math.min(1, dt * 8);
       if (this.peekDir) this.peekOff.copy(this.peekDir).multiplyScalar(0.75 * this.peekAmt); else this.peekOff.multiplyScalar(0.8);
+      if (this.cr) { this.animate(dt, P, aiming, pChest, dist); return; }
       const walk = moveTo ? Math.sin(this.t * 11) : 0;
       this.group.position.set(this.pos.x + this.peekOff.x, Math.abs(walk) * 0.03, this.pos.z + this.peekOff.z); this.group.rotation.y = this.yaw;
       this.legs.scale.y = 1 - 0.5 * this.crouch; this.upper.position.y = 0.86 - 0.45 * this.crouch; this.upper.rotation.x = this.crouch * 0.25 + (this.flinch > 0 ? -0.2 : 0);
@@ -302,6 +339,42 @@
       const armDown = 1.25, armAim = -0.02 - (aiming ? Math.atan2(pChest.y - this.eye.y, dist) : 0);
       const at = aiming || this.state === 'rush' ? armAim : armDown; this.arm.rotation.x += (at - this.arm.rotation.x) * Math.min(1, dt * 12);
       if (this.state === 'melee') this.arm.rotation.x = this.atkT > 0.2 ? -1.6 - Math.sin(this.t * 30) * 0.05 : -1.6 + (0.2 - this.atkT) * 12; // raised knife telegraphs the swing
+    }
+    animate(dt, P, aiming, pChest, dist) {
+      const r = this.cr, k = r.kind;
+      this.vel.set((this.pos.x - this.prev.x) / Math.max(dt, 1e-3), 0, (this.pos.z - this.prev.z) / Math.max(dt, 1e-3)); this.prev.copy(this.pos);
+      this.group.position.set(this.pos.x + this.peekOff.x, 0, this.pos.z + this.peekOff.z); this.group.rotation.y = this.yaw;
+      const sp = this.vel.length(), fwd = this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw);
+      const alerted = this.state !== 'dormant' && this.state !== 'idle';
+      if (this.state === 'melee') {
+        if (this.lastState !== 'melee') r.full(r.has('slash') ? 'slash' : 'hold_' + k, 0.08, true);
+      } else {
+        let low = 'idle', ts = 1;
+        if (sp > 0.5 && this.state !== 'peek') {
+          if (fwd >= -0.2 * sp) { low = sp > 2.0 ? 'run' : 'walk'; ts = sp / r.speedOf(low); }
+          else { low = 'walk'; ts = -sp / r.speedOf('walk'); }
+        } else if (this.crouch > 0.5) low = 'crouch';
+        if (this.lastState === 'melee') { r.layerName.L = ''; r.layerName.U = ''; }
+        r.play('L', low, 0.22, false, ts);
+        let up = low;
+        if (alerted && k !== 'none') up = aiming && r.has('aim_' + k) ? 'aim_' + k : 'hold_' + k;
+        r.play('U', up, 0.2, false, up === low ? ts : 1);
+      }
+      this.lastState = this.state;
+      r.update(dt);
+      if (aiming && this.state !== 'melee') { // pitch the chest onto the target
+        const f = V3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), ax = V3(f.z, 0, -f.x);
+        const pitch = Math.atan2(pChest.y - this.eye.y, Math.max(dist, 0.5));
+        r.bend(r.bones.chest, ax, -pitch * 0.85);
+      }
+      if (this.flinch > 0) r.bend(r.bones.head, V3(0, 1, 0), Math.sin(this.t * 40) * 0.06);
+      r.lod(Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) > 13);
+      if (this.cone && r.lampTip) { // the flashlight beam follows the lamp in his hand
+        const tip = r.lampTip.getWorldPosition(V3(0, 0, 0)), hand = r.bones.handL.getWorldPosition(V3(0, 0, 0));
+        const d = tip.clone().sub(hand).normalize(); this.group.worldToLocal(tip);
+        const dl = d.applyQuaternion(this.group.quaternion.clone().invert());
+        this.cone.quaternion.setFromUnitVectors(V3(0, -1, 0), dl); this.cone.position.copy(tip).addScaledVector(dl, 1.5);
+      }
     }
     backToCover(failed) { if (this.cover) { this.state = 'cover'; this.t = 0; this.wait = 1.0 + Math.random() * 1.8; if (failed) this.flankT = Math.min(this.flankT, 1.5); } else { this.state = 'engage'; this.t = 0; } }
     coverGood(P) { if (!this.cover) return false; const d = V3(P.pos.x - this.cover.pos.x, 0, P.pos.z - this.cover.pos.z); const L = d.length(); if (L < 2.2) return false; return d.normalize().dot(this.cover.n) < -0.25; }
@@ -327,7 +400,8 @@
       return best;
     }
     fire(P, dist, suppressAt) {
-      const muzzle = this.arm.localToWorld(V3(0, 0.04, 0.72));
+      const muzzle = this.cr ? (this.cr.muzzle || this.cr.bones.handR).getWorldPosition(V3(0, 0, 0)) : this.arm.localToWorld(V3(0, 0.04, 0.72));
+      if (this.cr) this.cr.additive('recoil', this.cr.kind === 'tommy' ? 0.6 : 1);
       // accuracy falls off with range, a moving target and slow-mo; the first shot of a peek is the steadiest
       let ch = (0.72 - dist * 0.028) * this.accuracy; if (P.moving) ch *= 0.6; if (P.focus > 0) ch *= 0.75; ch = NR.clamp(ch, 0.1, 0.72);
       const hit = !suppressAt && Math.random() < ch, tgt = suppressAt ? suppressAt.clone() : V3(P.pos.x, P.pos.y + 1.2, P.pos.z);
@@ -338,12 +412,33 @@
       if (hit) NR.bus.emit('playerHit', { dmg: this.dmg, from: this.pos.clone() });
       else if (!suppressAt && NR.core) NR.bus.emit('nearMiss', { from: this.pos.clone() });
     }
-    remove() { if (this.group.parent) this.group.parent.remove(this.group); if (this.cover) this.cover.taken = null; }
+    remove() { this.removed = true; if (this.group.parent) this.group.parent.remove(this.group); if (this.cover) this.cover.taken = null; }
   }
-  Enemy.all = []; Enemy.flankers = 0;
+  Enemy.all = []; Enemy.flankers = 0; Enemy.galeN = 0;
   function spawn(level, o) { const e = new Enemy(level, o); Enemy.all.push(e); return e; }
-  function clear() { for (const e of Enemy.all) e.remove(); Enemy.all = []; Enemy.flankers = 0; }
-  function corpse(level, pos, yaw) { const f = buildFigure(STYLES.corpse); f.group.position.copy(pos); f.group.rotation.set(-Math.PI / 2 + 0.05, yaw, 0, 'YXZ'); f.group.position.y = 0.14; f.arm.rotation.x = 0.4; level.scene.add(f.group); return f; }
+  function clear() { for (const e of Enemy.all) e.remove(); Enemy.all = []; Enemy.flankers = 0; Enemy.galeN = 0; }
+  function corpse(level, pos, yaw) { // Miles Corran on his back, his fedora fallen beside him
+    const g = new T.Group(); level.scene.add(g);
+    const fb = corpseBlocks(level, pos, yaw); fb.group.visible = false;
+    const show = (tpl) => {
+      if (!g.parent || !tpl) return;
+      const r = new NR.cast.Rig(tpl, 'miles'); r.full('dead_pose', 0, true); r.update(2); r.lod(false);
+      g.add(r.root); g.rotation.y = yaw; g.position.copy(pos); g.updateMatrixWorld(true);
+      const h = r.bones.hips.getWorldPosition(V3(0, 0, 0)); g.position.x += pos.x - h.x; g.position.z += pos.z - h.z; g.updateMatrixWorld(true);
+      if (r.hat) { // the fedora lies on the ground beside his head
+        const hp = r.bones.head.getWorldPosition(V3(0, 0, 0)); r.hat.parent.remove(r.hat);
+        const hat = new T.Group(); hat.add(r.hat); r.hat.position.set(0, 0, 0); r.hat.quaternion.identity(); r.hat.updateMatrix();
+        const bb = new T.Box3().setFromObject(r.hat), c = bb.getCenter(V3(0, 0, 0)); r.hat.position.set(-c.x, -bb.min.y, -c.z);
+        hat.position.set(hp.x + 0.35 * Math.cos(yaw), 0.0, hp.z - 0.35 * Math.sin(yaw)); hat.rotation.set(0, yaw + 0.7, 0.08); level.scene.add(hat); g.userData.hat = hat;
+      }
+      g.userData.rig = r; if (fb.group.parent) fb.group.parent.remove(fb.group);
+    };
+    const t = NR.cast && NR.cast.ready('miles');
+    if (t) show(t); else if (NR.cast) { fb.group.visible = true; NR.cast.family(NR.ASSET + NR.cast.URL.miles).then(show, () => {}); } else fb.group.visible = true;
+    return { group: g };
+  }
+  function corpseBlocks(level, pos, yaw) { const f = buildFigure(STYLES.corpse); f.group.position.copy(pos); f.group.rotation.set(-Math.PI / 2 + 0.05, yaw, 0, 'YXZ'); f.group.position.y = 0.14; f.arm.rotation.x = 0.4; level.scene.add(f.group); return f; }
 
+  if (NR.cast) setTimeout(() => NR.cast.preload(), 300); // fetch the cast while the title is up
   NR.actors = { Painted, Model3D, character, loadGLB, MODELS, Enemy, spawn, clear, corpse, buildFigure, preload, get enemies() { return Enemy.all; } };
 })();

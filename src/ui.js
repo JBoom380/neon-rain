@@ -57,7 +57,7 @@
 #nru .btn.red{border-color:#b8241c;color:#ffd8cc;box-shadow:0 0 12px rgba(184,36,28,.5)}
 #nru .btn:active{background:rgba(234,223,202,.2)}
 #nru .title{background:radial-gradient(ellipse at 50% 35%,rgba(0,0,0,.05),rgba(0,0,0,.75) 80%)}
-#nru .logo{font-family:Georgia,serif;font-weight:bold;font-size:58px;letter-spacing:.08em;line-height:1;color:#fff4ea;text-shadow:0 0 6px #ff4a3a,0 0 22px #d8261a,0 0 44px #b8241c;margin-top:-50vh}
+#nru .logo{font-family:Georgia,serif;font-weight:bold;font-size:58px;letter-spacing:.08em;line-height:1;color:#fff4ea;margin-top:-46vh;width:100%}
 #nru .logo small{display:block;font-size:13px;letter-spacing:.42em;color:#eadfca;text-shadow:0 1px 3px #000;margin-top:18px;font-weight:normal}
 #nru .logo em{display:block;font-style:italic;font-size:22px;letter-spacing:.06em;color:#eadfca;text-shadow:0 1px 4px #000;margin-top:8px;font-weight:normal}
 #nru .menu{position:absolute;left:0;right:0;bottom:9%}
@@ -183,7 +183,8 @@
     E.card = h('div', 'card', '<div class="fr"></div>'); E.cardT = E.card.querySelector('.fr');
     E.tut = h('div', 'tut', '<h3></h3><p></p><div class="go">TAP TO CONTINUE &#x25B8;</div>');
     // screens
-    E.title = h('div', 'scr title', '<div class="logo">NEON RAIN<em>The Glass Saint</em><small>CASE 01</small></div><div class="menu"></div><div class="foot">GREY-BOX SLICE</div>');
+    E.title = h('div', 'scr title', '<div class="logo"></div><div class="menu"></div>');
+    NR.neon.mount(E.title.querySelector('.logo'));
     const menu = E.title.querySelector('.menu');
     E.begin = h('div', 'btn red', 'BEGIN CASE', menu); E.jbBtn = h('div', 'btn', 'JUKEBOX', menu); E.setBtn = h('div', 'btn', 'SETTINGS', menu);
     onTap(E.jbBtn, () => NR.jukebox.open());
@@ -209,7 +210,7 @@
     const s = core.settings, rows = E.set.querySelector('.rows'); rows.innerHTML = '';
     const row = (label, val, dec, inc) => { const r = h('div', 'row', '<span>' + label + '</span><div class="v"></div>', rows); const v = r.querySelector('.v');
       if (dec) onTap(h('b', '', '&minus;', v), () => { dec(); settingsOpen(true); }); h('span', '', val, v); onTap(h('b', '', inc && dec ? '+' : '&#x21C4;', v), () => { (inc || dec)(); settingsOpen(true); }); };
-    row('B&amp;W + RED', s.bw ? 'ON' : 'OFF', null, () => { s.bw = !s.bw; core.saveSettings(); });
+    row('FILM', s.film === 'bwred' ? 'B&amp;W RED' : 'NOIR COLOR', null, () => { s.film = s.film === 'bwred' ? 'noir' : 'bwred'; s.bw = s.film === 'bwred'; core.saveSettings(); });
     row('MUSIC', Math.round(s.music * 10), () => { s.music = Math.max(0, +(s.music - 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); }, () => { s.music = Math.min(1, +(s.music + 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); });
     row('SOUND', Math.round(s.sfx * 10), () => { s.sfx = Math.max(0, +(s.sfx - 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); }, () => { s.sfx = Math.min(1, +(s.sfx + 0.1).toFixed(1)); core.saveSettings(); NR.audio.setVolumes(); });
     row('LOOK SPEED', (s.sens || 1).toFixed(1), () => { s.sens = Math.max(0.4, +((s.sens || 1) - 0.1).toFixed(1)); core.saveSettings(); }, () => { s.sens = Math.min(2.5, +((s.sens || 1) + 0.1).toFixed(1)); core.saveSettings(); });

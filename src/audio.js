@@ -1,7 +1,7 @@
 // NEON RAIN audio: John's score (assets/music/tracks.json) on two crossfading decks with a VO duck, seamless rain loops per scene
 // (OGG, MP3 fallback for iOS Safari), Media Session, and synthesized sfx (revolver, reload, lighter, heartbeat).
 (function () {
-  let ctx = null, master = null, sfxBus = null, unlocked = false, noiseBuf = null;
+  let ctx = null, master = null, sfxBus = null, unlocked = false, noiseBuf = null, humNodes = null;
   const S = () => NR.core.settings;
   function ensure() {
     if (ctx) return ctx;
@@ -37,6 +37,12 @@
     inhale() { noise(0.8, 'bandpass', 1400, 0.8, 0.07, 0.3, 0.8); },
     focus() { if (!ensure()) return; const t = ctx.currentTime; tone(220, 'sine', 0.25, 1.2, t, 70); noise(1.0, 'lowpass', 300, 0.7, 0.2, 0.05, 1.2, t); },
     clue() { if (!ensure()) return; const t = ctx.currentTime; tone(660, 'triangle', 0.12, 0.4, t); tone(990, 'triangle', 0.1, 0.5, t + 0.09); },
+    neonClick() { if (!ensure()) return; const t = ctx.currentTime; tone(1800, 'square', 0.05, 0.015, t); noise(0.03, 'highpass', 2500, 0.7, 0.12, 0.001, 0.05, t); tone(95, 'sawtooth', 0.05, 0.18, t + 0.01, 60); },
+    neonTick() { noise(0.02, 'bandpass', 3200, 2, 0.06, 0.001, 0.035); tone(120, 'sawtooth', 0.025, 0.08, null, 90); },
+    neonHum(on) { if (!ensure()) return; if (on && !humNodes) { const g = ctx.createGain(); g.gain.value = 0; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420;
+        const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 60; const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 120; const g2 = ctx.createGain(); g2.gain.value = 0.6;
+        o1.connect(f); o2.connect(g2); g2.connect(f); f.connect(g); g.connect(sfxBus); o1.start(); o2.start(); g.gain.setTargetAtTime(0.022, ctx.currentTime, 0.4); humNodes = { g, o1, o2 }; }
+      else if (!on && humNodes) { const h = humNodes; humNodes = null; h.g.gain.setTargetAtTime(0, ctx.currentTime, 0.3); setTimeout(() => { try { h.o1.stop(); h.o2.stop(); } catch (e) {} }, 1500); } },
     whizz() { if (!ensure()) return; const n = noise(0.18, 'bandpass', 2600, 6, 0.18, 0.03, 0.18); if (n) n.f.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.2); },
     heel() { tone(2600 + Math.random() * 300, 'triangle', 0.05, 0.03); noise(0.02, 'highpass', 3000, 0.7, 0.06, 0.001, 0.04); },
     step() { noise(0.02, 'lowpass', 500, 0.7, 0.12, 0.001, 0.08); },
@@ -77,7 +83,7 @@
   }
   function current() { const d = decks[deckOn]; return d ? d.el : null; }
   function setOnEnded(f) { onEnded = f; }
-  function duck(v) { duckV = v; if (musicBus) musicBus.gain.setTargetAtTime(S().music * v, ctx.currentTime, 0.25); else { const c = current(); if (c) c.volume = S().music * v; } }
+  function duck(v) { duckV = v; if (musicBus) musicBus.gain.setTargetAtTime(S().music * v, ctx.currentTime, 0.25); else { const c = current(); if (c) c.volume = S().music * v; } rainLevel(); }
   function mediaSession(t) {
     if (!('mediaSession' in navigator) || !t) return;
     try {
@@ -93,17 +99,45 @@
   const RAIN_EXT = (() => { try { return new Audio().canPlayType('audio/ogg; codecs="vorbis"') ? '.ogg' : '.mp3'; } catch (e) { return '.mp3'; } })();
   function rainBuf(name) { if (!rainBufs[name]) rainBufs[name] = fetch(NR.ASSET + 'rain/' + name + RAIN_EXT).then(r => r.arrayBuffer()).then(b => new Promise((res, rej) => ctx.decodeAudioData(b, res, rej))); return rainBufs[name]; }
   // layers: [[name, gain], ...]
+  // Rain sits behind the score: its own bus, lowpassed (muffled; ~1 kHz inside the club), a high-shelf cut, and widened:
+  // each loop plays as two copies half a loop apart, panned hard left and hard right, so nothing sits in the centre.
+  // Level ~0.16 of the music bus, -3 dB more under VO, a little louder when no music plays.
+  let rainBus = null, rainLP = null, rainHS = null, rainMeter = null, musicMeter = null;
+  const RAIN_BASE = 0.16, RAIN_SILENT = 0.3, RAIN_VO = 0.7;
+  function rainChain() {
+    if (rainBus) return; rainLP = ctx.createBiquadFilter(); rainLP.type = 'lowpass'; rainLP.frequency.value = 2200; rainLP.Q.value = 0.5;
+    rainHS = ctx.createBiquadFilter(); rainHS.type = 'highshelf'; rainHS.frequency.value = 3000; rainHS.gain.value = -9;
+    rainBus = ctx.createGain(); rainBus.gain.value = RAIN_BASE * S().sfx; rainLP.connect(rainHS); rainHS.connect(rainBus); rainBus.connect(master);
+  }
+  function rainLevel() {
+    if (!rainBus) return; const c = current(), silent = !c || c.paused || c.ended;
+    const v = (silent ? RAIN_SILENT : RAIN_BASE) * (duckV < 1 ? RAIN_VO : 1) * S().sfx;
+    rainBus.gain.setTargetAtTime(v, ctx.currentTime, 0.5);
+  }
+  setInterval(() => { if (ctx) rainLevel(); }, 500);
+  // layers: [[name, gain], ...]; an optional layers.lp sets the lowpass cutoff (Hz)
   async function ambience(layers) {
-    if (!ensure()) return; const now = ctx.currentTime;
-    for (const n of rainNow) { n.g.gain.cancelScheduledValues(now); n.g.gain.setValueAtTime(n.g.gain.value, now); n.g.gain.linearRampToValueAtTime(0.0001, now + 2); const src = n.src; setTimeout(() => { try { src.stop(); } catch (e) {} }, 2200); }
+    if (!ensure()) return; rainChain(); const now = ctx.currentTime;
+    rainLP.frequency.setTargetAtTime(layers.lp || 2200, now, 0.5);
+    for (const n of rainNow) { n.g.gain.cancelScheduledValues(now); n.g.gain.setValueAtTime(n.g.gain.value, now); n.g.gain.linearRampToValueAtTime(0.0001, now + 2); const srcs = n.srcs; setTimeout(() => { for (const x of srcs) { try { x.stop(); } catch (e) {} } }, 2200); }
     rainNow = [];
     for (const [name, gain] of layers) {
       try {
-        const buf = await rainBuf(name), src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = buf; src.loop = true;
-        g.gain.value = 0.0001; src.connect(g); g.connect(sfxBus); src.start(0, Math.random() * buf.duration);
-        g.gain.linearRampToValueAtTime(gain, ctx.currentTime + 2); rainNow.push({ src, g });
+        const buf = await rainBuf(name), g = ctx.createGain(), srcs = [], off = Math.random() * buf.duration;
+        g.gain.value = 0.0001; g.connect(rainLP);
+        for (const [pan, shift] of [[-1, 0], [1, 0.5]]) { const src = ctx.createBufferSource(), p = ctx.createStereoPanner(); src.buffer = buf; src.loop = true; p.pan.value = pan; src.connect(p); p.connect(g); src.start(0, (off + shift * buf.duration) % buf.duration); srcs.push(src); }
+        g.gain.linearRampToValueAtTime(gain * 0.5, ctx.currentTime + 2); rainNow.push({ srcs, g });
       } catch (e) { console.warn('rain loop failed', name, e); }
     }
+    rainLevel();
+  }
+  // dev meter: RMS (dBFS) of the rain bus and the music bus over `secs` seconds
+  function meter(secs = 10) {
+    if (!ensure() || !rainBus) return Promise.resolve(null);
+    if (!rainMeter) { rainMeter = ctx.createAnalyser(); rainMeter.fftSize = 2048; rainBus.connect(rainMeter); musicMeter = ctx.createAnalyser(); musicMeter.fftSize = 2048; musicBusNode().connect(musicMeter); }
+    const buf = new Float32Array(2048); let rs = 0, ms = 0, n = 0;
+    return new Promise(res => { const iv = setInterval(() => { rainMeter.getFloatTimeDomainData(buf); for (const v of buf) rs += v * v; musicMeter.getFloatTimeDomainData(buf); for (const v of buf) ms += v * v; n += 2048; }, 50);
+      setTimeout(() => { clearInterval(iv); const db = x => +(10 * Math.log10(x / n + 1e-12)).toFixed(1); res({ rain: db(rs), music: db(ms), gap: +(db(ms) - db(rs)).toFixed(1) }); }, secs * 1000); });
   }
   function rainBed(on) { if (!on) ambience([]); }
   function playMusic(id) { return cue(id); }
@@ -111,7 +145,7 @@
     unlocked = true; ensure(); if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
     const c = current(); if (c && c.src) { const p = c.play(); if (p && p.catch) p.catch(() => {}); }
   }
-  function setVolumes() { if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; }
+  function setVolumes() { rainLevel(); if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; }
   function init() {
     const B = NR.bus;
     B.on('shot', () => fx.shot()); B.on('dryFire', () => fx.dry()); B.on('reload', () => fx.reload());
@@ -119,5 +153,5 @@
     B.on('enemyShot', d => { const P = NR.player; fx.enemyShot(P ? d.pos.distanceTo(P.pos) : 10); });
     B.on('smoke', () => { fx.lighter(); setTimeout(fx.inhale, 400); }); B.on('focus', () => fx.focus()); B.on('clue', () => fx.clue());
   }
-  NR.audio = { init, fx, unlock, playMusic, cue, duck, rainBed, ambience, setVolumes, loadTracks, current, setOnEnded, trackOf, get tracks() { return tracks; }, get cueId() { return cueId; }, get deckGains() { return decks.map(d => d.gain ? +d.gain.gain.value.toFixed(3) : null); }, get unlocked() { return unlocked; } };
+  NR.audio = { meter, init, fx, unlock, playMusic, cue, duck, rainBed, ambience, setVolumes, loadTracks, current, setOnEnded, trackOf, get tracks() { return tracks; }, get cueId() { return cueId; }, get deckGains() { return decks.map(d => d.gain ? +d.gain.gain.value.toFixed(3) : null); }, get unlocked() { return unlocked; } };
 })();
