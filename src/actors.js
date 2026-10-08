@@ -16,21 +16,27 @@
     const sh = level.shaft;
     return new T.ShaderMaterial({
       transparent: false, side: T.DoubleSide,
-      uniforms: { map: { value: null }, flip: { value: 0 }, walkPh: { value: 0 }, walk: { value: 0 }, side: { value: 0 }, cookie: { value: sh ? sh.cookie : blackTex }, lightVP: { value: sh ? sh.lightVP : new T.Matrix4() },
+      uniforms: { map: { value: null }, rect: { value: new T.Vector4(0, 0, 1, 1) }, flip: { value: 0 }, walkPh: { value: 0 }, walk: { value: 0 }, side: { value: 0 }, cookie: { value: sh ? sh.cookie : blackTex }, lightVP: { value: sh ? sh.lightVP : new T.Matrix4() },
         ambient: { value: new T.Color(sl.ambient) }, key: { value: new T.Color(sl.key) }, warm: { value: new T.Color(sl.warm) }, keyGain: { value: sh ? 1.0 : 0.0 },
-        fogC: { value: level.scene.fog.color }, fogD: { value: level.scene.fog.density }, hit: { value: 0 } },
-      vertexShader: 'uniform float flip; varying vec2 vUv; varying vec3 vW; varying float vDepth; void main(){ vUv=vec2(flip>0.5?1.-uv.x:uv.x, uv.y); vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vDepth=-mv.z; gl_Position=projectionMatrix*mv; }',
-      fragmentShader: `uniform sampler2D map, cookie; uniform mat4 lightVP; uniform vec3 ambient, key, warm, fogC; uniform float keyGain, fogD, hit, walk, walkPh, side; varying vec2 vUv; varying vec3 vW; varying float vDepth;
+        fogC: { value: level.scene.fog.color }, fogD: { value: level.scene.fog.density }, hit: { value: 0 },
+        rimGain: { value: 0 }, rimSide: { value: 1 }, rimCol: { value: new T.Color(0xf0dcc4) } },
+      vertexShader: 'uniform float flip; uniform vec4 rect; varying vec2 vUv, vL; varying vec3 vW; varying float vDepth; void main(){ vL=vec2(flip>0.5?1.-uv.x:uv.x, uv.y); vUv=rect.xy+vL*rect.zw; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vDepth=-mv.z; gl_Position=projectionMatrix*mv; }',
+      fragmentShader: `uniform vec4 rect; uniform float rimGain, rimSide; uniform vec3 rimCol; uniform sampler2D map, cookie; uniform mat4 lightVP; uniform vec3 ambient, key, warm, fogC; uniform float keyGain, fogD, hit, walk, walkPh, side; varying vec2 vUv, vL; varying vec3 vW; varying float vDepth;
         void main(){ vec2 uv = vUv;
           // two-pose walk: below the hem, the leg on one half lifts and swings while the other plants, then they swap
           if (walk > 0.0 && uv.y < 0.34) { float k = 1.0 - uv.y / 0.34; float s = sin(walkPh); float leg = uv.x < 0.5 ? 1.0 : -1.0;
             float lift = max(0.0, s * leg) * 0.022 * k * walk; uv.y -= lift;
             uv.x -= s * 0.035 * k * walk * side; }
-          vec4 t=texture2D(map,uv); if(t.a<0.5) discard; vec3 c=t.rgb*t.rgb; // ~linear
+          vec4 t=texture2D(map,uv); if(t.a<0.5) discard;
+          // 1-2 px matte erosion: the light anti-aliased edge of the sprite (its old background) never reaches the screen
+          vec2 e = max(abs(dFdx(uv)), abs(dFdy(uv))) * 1.5; float ea = min(min(texture2D(map, uv + vec2(e.x, 0.)).a, texture2D(map, uv - vec2(e.x, 0.)).a), min(texture2D(map, uv + vec2(0., e.y)).a, texture2D(map, uv - vec2(0., e.y)).a));
+          if (ea < 0.5) discard; t.rgb *= mix(0.75, 1.0, smoothstep(0.5, 0.95, ea)); vec3 c=t.rgb*t.rgb; // ~linear
           vec4 lp=lightVP*vec4(vW,1.); vec2 luv=lp.xy/lp.w*0.5+0.5; float ck=0.; if(keyGain>0. && lp.w>0. && luv.x>0. && luv.x<1. && luv.y>0. && luv.y<1.) ck=smoothstep(0.3,0.8,texture2D(cookie,luv).r);
-          float side=smoothstep(0.1,0.9,vUv.x);
-          vec3 light = ambient*(1.3+0.7*side) + key*ck*keyGain*(0.4+0.6*side) + warm*(1.0-vUv.y)*0.5;
+          float side=smoothstep(0.1,0.9,vL.x);
+          vec3 light = ambient*(1.3+0.7*side) + key*ck*keyGain*(0.4+0.6*side) + warm*(1.0-vL.y)*0.5;
           vec3 col = c*light*1.25 + vec3(hit,0.,0.);
+          // rim: a warm edge on the side the key light comes from (painted walker only; rimGain 0 elsewhere)
+          if (rimGain > 0.0) { float an = texture2D(map, uv + vec2(rect.z * 0.006 * rimSide, rect.w * 0.002)).a; col += rimCol * rimCol * (1.0 - an) * rimGain * 0.35 * (0.5 + 0.5 * vL.y); } // thin, faint: no halo
           float f = 1.0-exp(-fogD*fogD*vDepth*vDepth); col = mix(col, fogC*fogC, f);
           // red-keep mask for the B&W grade: painted reds (dress, lips) write alpha < 1, the post pass keeps their colour
           float rk = smoothstep(2.0, 2.8, t.r / max(0.03, max(t.g, t.b))) * smoothstep(0.16, 0.3, t.r);
@@ -81,6 +87,86 @@
     remove() { if (this.group.parent) this.group.parent.remove(this.group); }
   }
 
+  // ================================================================ frame-animated painted walker (Vela)
+  // Painted over a mocap walk: 16-frame loop from 8 camera angles, a stop-and-turn clip that carries its own root motion,
+  // an idle loop seen from the front and one still per angle at rest. Walk frames advance with distance walked, so feet do not slide.
+  function loadAnim(who) { return Promise.resolve((NR.ANIM && NR.ANIM[who]) || null); } // table lives in src/anim_data.js (no fetch, no 404)
+  const sheet = name => loadTex(NR.ASSET + 'sprites/' + name);
+  function cellRect(v, s, i) { const c = i % s.cols, r = Math.floor(i / s.cols); v.set(c / s.cols, 1 - (r + 1) / s.rows, 1 / s.cols, 1 / s.rows); }
+  class Walker {
+    constructor(who, level, pos, yaw, D) {
+      this.who = who; this.D = D; this.pos = pos.clone(); this.yaw = yaw || 0; this.rimSrc = level.shaft ? level.shaft.pos : null;
+      this.tex = { walk: {}, stop: {}, pose: sheet(D.pose.sheet), idle: sheet(D.idle.sheet) };
+      if (D.stop.angles) for (const a in D.stop.angles) this.tex.stop[a] = sheet(D.stop.angles[a].sheet); else this.tex.stop['0'] = sheet(D.stop.sheet);
+      for (const a in D.walk.angles) this.tex.walk[a] = sheet(D.walk.angles[a].sheet);
+      this.mat = paintedMat(level); this.mat.uniforms.map.value = this.tex.idle; cellRect(this.mat.uniforms.rect.value, D.idle, 0);
+      this.mesh = new T.Mesh(new T.PlaneGeometry(D.world[0], D.world[1]), this.mat); this.mesh.position.y = D.centerY; this.mesh.renderOrder = 1;
+      const cs = new T.Mesh(new T.PlaneGeometry(0.9, 0.5), new T.MeshBasicMaterial({ map: NR.world.glowTex, color: 0x000000, transparent: true, opacity: 0.75, depthWrite: false }));
+      cs.material.onBeforeCompile = s => { s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', 'vec4 sc=texture2D(map,vMapUv); diffuseColor=vec4(0.,0.,0.,sc.r*opacity);'); };
+      cs.rotation.x = -Math.PI / 2; cs.position.y = 0.012; cs.renderOrder = 1; this.shadow = cs;
+      this.group = new T.Group(); this.group.add(this.mesh, cs); level.scene.add(this.group);
+      this.path = null; this.speed = D.walk.speed; this.mode = 'idle'; this.t = 0; this.dist = 0; this.ph0 = 0; this.stopAt = null; this.clip = null;
+      this.visible = true; this.walking = false; this.sector = 0; this.frame = 0; this.onArrive = null; this.lastPh = 0;
+      this.group.position.copy(this.pos);
+    }
+    walkTo(points, speed, opt) {
+      const stop = !(opt && opt.stop === false), W = this.D.walk, S = this.D.stop;
+      this.path = points.map(p => p.clone()); this.speed = speed || W.speed; this.dist = 0; this.mode = 'walk';
+      let L = 0, prev = this.pos; for (const p of this.path) { L += Math.hypot(p.x - prev.x, p.z - prev.z); prev = p; }
+      const last = this.path.length > 1 ? this.path[this.path.length - 2] : this.pos, end = this.path[this.path.length - 1];
+      const lastLen = Math.hypot(end.x - last.x, end.z - last.z), dClip = S.root[S.root.length - 1][0];
+      this.stopAt = stop && lastLen > dClip + 0.3 ? L - dClip : null; // the clip carries her the last dClip metres onto the mark
+      this.endYaw = Math.atan2(end.x - last.x, end.z - last.z);
+      // start the cycle on the phase that lands the clip's first frame exactly where the loop leaves off
+      this.ph0 = this.stopAt != null ? (((S.phase - this.stopAt / W.cycle) % 1) + 1) % 1 : 0; this.lastPh = this.ph0;
+      return new Promise(r => { this.onArrive = r; });
+    }
+    faceTo(p) { this.yaw = Math.atan2(p.x - this.pos.x, p.z - this.pos.z); }
+    arrive() { this.path = null; this.mode = 'idle'; this.t = 0; const f = this.onArrive; this.onArrive = null; if (f) f(); }
+    update(dt, cam) {
+      const D = this.D, W = D.walk, S = D.stop, u = this.mat.uniforms; this.t += dt; this.walking = false;
+      if (this.mode === 'walk') {
+        if (this.stopAt != null && this.dist >= this.stopAt) { this.mode = 'stop'; this.clip = { t: 0, o: this.pos.clone(), y: this.endYaw, f: -1 }; this.yaw = this.endYaw; }
+        else if (this.path && this.path.length) {
+          const tgt = this.path[0], d = V3(tgt.x - this.pos.x, 0, tgt.z - this.pos.z), L = d.length();
+          if (L < 0.02) { this.path.shift(); if (!this.path.length) this.arrive(); }
+          else {
+            const step = Math.min(L, this.speed * dt); this.pos.addScaledVector(d.normalize(), step); this.dist += step; this.walking = true;
+            let dy = Math.atan2(d.x, d.z) - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * Math.min(1, dt * 6);
+          }
+        } else this.arrive();
+      }
+      if (this.mode === 'stop') {
+        const c = this.clip; c.t += dt; const f = Math.min(S.frames - 1, Math.floor(c.t * S.fps)), r = S.root[f];
+        const sy = Math.sin(c.y), cy = Math.cos(c.y);
+        this.pos.set(c.o.x + sy * r[0] + cy * r[1], 0, c.o.z + cy * r[0] - sy * r[1]);
+        if (f !== c.f && S.heels.includes(f) && NR.audio) NR.audio.fx.heel(); c.f = f;
+        if (c.t >= S.frames / S.fps) { this.yaw = c.y + S.turn * Math.PI / 180; this.arrive(); }
+      }
+      this.group.position.copy(this.pos);
+      const cx = cam.position.x - this.pos.x, cz = cam.position.z - this.pos.z;
+      this.mesh.rotation.y = Math.atan2(cx, cz);
+      let az = Math.atan2(cx, cz) - this.yaw; az = Math.atan2(Math.sin(az), Math.cos(az));
+      const k = ((Math.round(az / (Math.PI / 4)) % 8) + 8) % 8; this.sector = k; const ang = String(k * 45);
+      if (this.mode === 'walk') {
+        const ph = (this.ph0 + this.dist / W.cycle) % 1;
+        for (const p of W.plants) if ((this.lastPh < p && ph >= p) || (this.lastPh > ph && (p > this.lastPh || ph >= p))) { if (NR.audio) NR.audio.fx.heel(); }
+        this.lastPh = ph; this.frame = Math.floor(ph * W.frames) % W.frames;
+        u.map.value = this.tex.walk[ang]; cellRect(u.rect.value, W.angles[ang], this.frame);
+      } else if (this.mode === 'stop') { // the clip was painted from 8 angles around her final facing
+        let az2 = Math.atan2(cx, cz) - (this.clip.y + S.turn * Math.PI / 180); az2 = Math.atan2(Math.sin(az2), Math.cos(az2));
+        const a2 = S.angles ? String((((Math.round(az2 / (Math.PI / 4)) % 8) + 8) % 8) * 45) : '0';
+        u.map.value = this.tex.stop[a2]; cellRect(u.rect.value, S.angles ? S.angles[a2] : S, Math.max(0, this.clip.f));
+      } else if (k === 0) {
+        u.map.value = this.tex.idle; cellRect(u.rect.value, D.idle, Math.floor(this.t * D.idle.fps) % D.idle.frames);
+      } else { u.map.value = this.tex.pose; cellRect(u.rect.value, D.pose, D.pose.index[ang]); }
+      u.flip.value = 0; u.walk.value = 0;
+      if (this.rimSrc) { const cl = Math.hypot(cx, cz) || 1, lx = this.rimSrc.x - this.pos.x, lz = this.rimSrc.z - this.pos.z; u.rimSide.value = (lx * cz - lz * cx) / cl >= 0 ? 1 : -1; u.rimGain.value = 0.55; }
+      this.group.visible = this.visible;
+    }
+    remove() { if (this.group.parent) this.group.parent.remove(this.group); }
+  }
+
   // ================================================================ 3D characters (rigged GLB: 'idle' + 'walk')
   const glbCache = {};
   function loadGLB(url) { if (!glbCache[url]) glbCache[url] = NR.gltf.load(url); return glbCache[url]; }
@@ -123,6 +209,8 @@
     if (NR.core.settings.chars === '3d' && MODELS[who]) {
       try { return new Model3D(await loadGLB(NR.ASSET + MODELS[who]), level, pos, yaw); } catch (e) { console.warn('3D model failed, using the painted figure', e); }
     }
+    const D = NR.core.settings.chars !== '3d' ? await loadAnim(who) : null;
+    if (D) return new Walker(who, level, pos, yaw, D);
     return new Painted(who, level, pos, yaw);
   }
 
@@ -245,8 +333,16 @@
       this.dead = true; this.state = 'dead'; this.deadT = 0; if (this.cover) { this.cover.taken = null; this.cover = null; }
       this.fallAxis = V3(dir.z, 0, -dir.x).normalize(); this.fallFrom = this.group.quaternion.clone();
       const fwd = Math.sin(this.yaw) * dir.x + Math.cos(this.yaw) * dir.z; // > 0: shot from behind
-      this.deathClip = fwd > 0.3 ? 'die_fwd' : (head && Math.random() < 0.5) || Math.random() < 0.25 ? 'die_slip' : 'die_back';
-      if (this.cr) { this.cr.full(this.deathClip, 0.1, true); this.glint.visible = false; if (this.cone) this.cone.visible = false; }
+      // which fall: from a crouch he folds where he is; shot from behind he pitches forward; from the front he goes back,
+      // buckles to his knees or slips. The fall must have room: rotate it away from tables and walls when it does not.
+      const r_ = Math.random();
+      this.deathClip = this.crouch > 0.5 ? 'die_crouch' : fwd > 0.3 ? 'die_fwd' : (head && r_ < 0.4) || r_ < 0.2 ? 'die_slip' : r_ < 0.55 ? 'die_kneel' : 'die_back';
+      if (this.cr && !this.cr.has(this.deathClip)) this.deathClip = fwd > 0.3 ? 'die_fwd' : 'die_back';
+      const back = this.deathClip === 'die_back' || this.deathClip === 'die_slip';
+      const L_ = this.level, reach = this.deathClip === 'die_crouch' ? 1.4 : 1.9, room = (yaw) => { const d = V3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(back ? -1 : 1); return [0.25, 0.6, 0.85].every(h => !L_.ray(V3(this.pos.x, h, this.pos.z), d, reach)) && !L_.blockedAt(this.pos.x + d.x * reach * 0.7, this.pos.z + d.z * reach * 0.7, 0.3); };
+      this.deathYaw = this.yaw;
+      for (const off of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, Math.PI]) { if (room(this.yaw + off)) { this.deathYaw = this.yaw + off; break; } }
+      if (this.cr) { this.group.rotation.y = this.deathYaw; this.cr.full(this.deathClip, this.crouch > 0.3 ? 0.3 : 0.12, true); this.glint.visible = false; if (this.cone) this.cone.visible = false; }
       NR.bus.emit('enemyDown', { enemy: this, head });
     }
     update(dt, P) {
@@ -304,7 +400,7 @@
         const see = L.los(this.eye, pChest) || L.los(this.eye, pHead);
         aiming = true;
         if (see && this.flinch <= 0) {
-          if (this.seenT <= 0) this.aimT = Math.max(this.aimT, 0.75 + Math.random() * 0.45); // reaction delay after losing sight
+          if (this.seenT <= 0) this.aimT = Math.max(this.aimT, 0.75 + Math.random() * 0.45 + (P.drawn ? 0 : 0.35)); // a holstered man gets a beat longer // reaction delay after losing sight
           this.seenT = 2.5; this.lastSeen = pChest.clone();
           this.aimT -= dt; glint = this.aimT < 0.42;
           if (this.aimT <= 0) { this.fire(P, dist); this.shots--; this.aimT = 0.6 + Math.random() * 0.4; if (this.shots <= 0) { this.backToCover(); } }
@@ -355,10 +451,11 @@
           else { low = 'walk'; ts = -sp / r.speedOf('walk'); }
         } else if (this.crouch > 0.5) low = 'crouch';
         if (this.lastState === 'melee') { r.layerName.L = ''; r.layerName.U = ''; }
-        r.play('L', low, 0.22, false, ts);
+        const fadeL = (low === 'crouch') !== (r.layerName.L === 'crouch') ? 0.35 : 0.22; // crouch <-> stand blends over 0.35 s
+        r.play('L', low, fadeL, false, ts);
         let up = low;
         if (alerted && k !== 'none') up = aiming && r.has('aim_' + k) ? 'aim_' + k : 'hold_' + k;
-        r.play('U', up, 0.2, false, up === low ? ts : 1);
+        r.play('U', up, fadeL > 0.3 ? 0.35 : 0.2, false, up === low ? ts : 1);
       }
       this.lastState = this.state;
       r.update(dt);
@@ -368,6 +465,7 @@
         r.bend(r.bones.chest, ax, -pitch * 0.85);
       }
       if (this.flinch > 0) r.bend(r.bones.head, V3(0, 1, 0), Math.sin(this.t * 40) * 0.06);
+      if (this.state !== 'melee') r.footLock(dt, r.layerName.L === 'run' || r.layerName.L === 'walk' || r.layerName.L === 'idle', 0, r.layerName.L === 'idle' ? 0.16 : 0.6);
       r.lod(Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) > 13);
       if (this.cone && r.lampTip) { // the flashlight beam follows the lamp in his hand
         const tip = r.lampTip.getWorldPosition(V3(0, 0, 0)), hand = r.bones.handL.getWorldPosition(V3(0, 0, 0));
@@ -422,6 +520,8 @@
     const fb = corpseBlocks(level, pos, yaw); fb.group.visible = false;
     const show = (tpl) => {
       if (!g.parent || !tpl) return;
+      // he lies under the alley's work light: a darker, rougher wet coat so the spot does not blow him out to yellow
+      if (!tpl.milesTuned) { tpl.milesTuned = true; for (const m of tpl.mats) m.color.setRGB(0.34, 0.33, 0.35); }
       const r = new NR.cast.Rig(tpl, 'miles'); r.full('dead_pose', 0, true); r.update(2); r.lod(false);
       g.add(r.root); g.rotation.y = yaw; g.position.copy(pos); g.updateMatrixWorld(true);
       const h = r.bones.hips.getWorldPosition(V3(0, 0, 0)); g.position.x += pos.x - h.x; g.position.z += pos.z - h.z; g.updateMatrixWorld(true);
@@ -440,5 +540,5 @@
   function corpseBlocks(level, pos, yaw) { const f = buildFigure(STYLES.corpse); f.group.position.copy(pos); f.group.rotation.set(-Math.PI / 2 + 0.05, yaw, 0, 'YXZ'); f.group.position.y = 0.14; f.arm.rotation.x = 0.4; level.scene.add(f.group); return f; }
 
   if (NR.cast) setTimeout(() => NR.cast.preload(), 300); // fetch the cast while the title is up
-  NR.actors = { Painted, Model3D, character, loadGLB, MODELS, Enemy, spawn, clear, corpse, buildFigure, preload, get enemies() { return Enemy.all; } };
+  NR.actors = { Painted, Walker, loadAnim, Model3D, character, loadGLB, MODELS, Enemy, spawn, clear, corpse, buildFigure, preload, get enemies() { return Enemy.all; } };
 })();

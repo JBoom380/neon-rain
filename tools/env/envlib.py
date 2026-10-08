@@ -616,3 +616,134 @@ def single_material(o, mat):
     o.data.materials.clear(); o.data.materials.append(mat)
     for p in o.data.polygons:
         p.material_index = 0
+
+
+# ---------------------------------------------------------------- art deco vocabulary (docs/STYLE_GUIDE.md): materials + parts
+def deco_gold(name='deco_gold'):
+    """Brushed gold: metallic, fine directional streaks as a bump (normal) so the bake catches the brushing."""
+    if name in bpy.data.materials:
+        return bpy.data.materials[name]
+    m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; b = nt.nodes['Principled BSDF']
+    b.inputs['Base Color'].default_value = (0.83, 0.58, 0.22, 1); b.inputs['Metallic'].default_value = 1.0; b.inputs['Roughness'].default_value = 0.28
+    tc = nt.nodes.new('ShaderNodeTexCoord'); mp = nt.nodes.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (2.0, 2.0, 260.0)
+    nz = nt.nodes.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 6.0; nz.inputs['Detail'].default_value = 6.0
+    bp = nt.nodes.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.25
+    nt.links.new(tc.outputs['Object'], mp.inputs['Vector']); nt.links.new(mp.outputs[0], nz.inputs['Vector'])
+    nt.links.new(nz.outputs['Fac'], bp.inputs['Height']); nt.links.new(bp.outputs[0], b.inputs['Normal'])
+    return m
+
+
+def deco_lacquer(name='deco_lacquer'):
+    if name in bpy.data.materials:
+        return bpy.data.materials[name]
+    return flat(name, (0.01, 0.009, 0.009), rough=0.12)
+
+
+def deco_teal(name='deco_teal', glow=0.6):
+    if name in bpy.data.materials:
+        return bpy.data.materials[name]
+    return flat(name, (0.02, 0.32, 0.28), rough=0.08, emit=(0.05, 0.75, 0.6), emit_strength=glow)
+
+
+def deco_stepped_frame(name, plane, c, w, h, t=0.035, d=0.02, steps=2, mat=None):
+    """Rectangular frame with stepped (notched) corners. plane: 'z' (frame faces +/-z at depth c[2]) or 'x'.
+    c = centre (game coords). Returns a list of objects."""
+    mat = mat or deco_gold(); out = []
+    def bx(u0, v0, u1, v1):
+        if plane == 'z':
+            out.append(box(name, (c[0] + u0, c[1] + v0, c[2] - d / 2), (c[0] + u1, c[1] + v1, c[2] + d / 2), mat, bevel=0.003))
+        else:
+            out.append(box(name, (c[0] - d / 2, c[1] + v0, c[2] + u0), (c[0] + d / 2, c[1] + v1, c[2] + u1), mat, bevel=0.003))
+    hw, hh = w / 2, h / 2
+    bx(-hw, hh - t, hw, hh); bx(-hw, -hh, hw, -hh + t); bx(-hw, -hh, -hw + t, hh); bx(hw - t, -hh, hw, hh)
+    s = t * 1.6
+    for k in range(1, steps + 1):   # the steps: small squares nested into each corner
+        o = s * k
+        for su, sv in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
+            u = su * (hw - o); v = sv * (hh - o)
+            bx(min(u, u - su * t * 0.9), min(v, v - sv * t * 0.9), max(u, u - su * t * 0.9), max(v, v - sv * t * 0.9))
+    return out
+
+
+def slab(name, gpts, thick, mat):
+    """A flat polygon (game-space points in a z = const plane) extruded `thick` toward +z."""
+    bm = bmesh.new()
+    f = bm.faces.new([bm.verts.new(G(*p)) for p in gpts])
+    r = bmesh.ops.extrude_face_region(bm, geom=[f])
+    vs = [e for e in r['geom'] if isinstance(e, bmesh.types.BMVert)]
+    bmesh.ops.translate(bm, verts=vs, vec=Vector((0, -thick, 0)))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    o = mesh_obj(name, bm, mat); box_uv(o, 0.3); return o
+
+
+def deco_sunburst(name, centre, r0, r1, n=17, mat=None, thick=0.03, hub=True, w=(0.03, 0.012)):
+    """Half sunburst crest facing +z: alternating long/short tapered gold rays over 180 degrees around centre."""
+    mat = mat or deco_gold(); out = []
+    cx, cy, cz = centre
+    for i in range(n):
+        a = math.pi * (i + 0.5) / n
+        L = r1 if i % 2 == 0 else r0 + (r1 - r0) * 0.7
+        w0, w1 = w if i % 2 == 0 else (w[0] * 0.66, w[1] * 0.66)
+        ux, uy = math.cos(a), math.sin(a); px, py = -uy, ux
+        pts = [(cx + ux * r0 + px * w0, cy + uy * r0 + py * w0, cz), (cx + ux * L + px * w1, cy + uy * L + py * w1, cz),
+               (cx + ux * L - px * w1, cy + uy * L - py * w1, cz), (cx + ux * r0 - px * w0, cy + uy * r0 - py * w0, cz)]
+        out.append(slab(name, pts, thick, mat))
+    if hub:
+        pts = [(cx + r0 * math.cos(math.pi * k / 16), cy + r0 * math.sin(math.pi * k / 16), cz) for k in range(17)]
+        out.append(slab(name + '_hub', pts, thick * 1.3, mat))
+    else:   # an arch band along the inner radius
+        for k in range(24):
+            a0, a1 = math.pi * k / 24, math.pi * (k + 1) / 24
+            r_in, r_out = r0 - 0.06, r0
+            out.append(slab(name + '_band', [(cx + r_in * math.cos(a0), cy + r_in * math.sin(a0), cz), (cx + r_out * math.cos(a0), cy + r_out * math.sin(a0), cz),
+                                              (cx + r_out * math.cos(a1), cy + r_out * math.sin(a1), cz), (cx + r_in * math.cos(a1), cy + r_in * math.sin(a1), cz)], thick * 1.3, mat))
+    return out
+
+
+def deco_porthole(name, centre, r, plane='z', mat=None, glass=None, face=1):
+    """Porthole in a rounded-square frame: gold square frame, gold ring, teal glass disc (facing +z, or +x when plane='x')."""
+    mat = mat or deco_gold(); glass = glass or deco_teal(); out = []
+    out += deco_stepped_frame(name + '_sq', plane, centre, r * 2.5, r * 2.5, t=0.03, d=0.02, steps=1, mat=mat)
+    bm = bmesh.new()
+    seg, rs = 24, 6
+    rings = []
+    for i in range(seg):
+        a = 2 * math.pi * i / seg; ring_v = []
+        for j in range(rs):
+            b2 = 2 * math.pi * j / rs; rr = r + 0.018 * math.cos(b2)
+            ring_v.append(bm.verts.new((rr * math.cos(a), rr * math.sin(a), 0.018 * math.sin(b2))))
+        rings.append(ring_v)
+    for i in range(seg):
+        for j in range(rs):
+            bm.faces.new((rings[i][j], rings[(i + 1) % seg][j], rings[(i + 1) % seg][(j + 1) % rs], rings[i][(j + 1) % rs]))
+    to = mesh_obj(name + '_torus', bm, mat)
+    disc = cyl(name + '_glass', (0, 0, 0), r * 0.97, 0.008, glass, seg=24)
+    for o in (to, disc):
+        o.rotation_euler = (math.pi / 2, 0, math.pi / 2 if plane == 'x' else 0)
+        o.location = G(*centre); apply_xform(o); box_uv(o, 0.3)
+    out += [to, disc]
+    return out
+
+
+def deco_fountain(name, base, scale=1.0, plane_ry=0, mat=None, shade=None):
+    """Frozen-fountain spray sconce: a stepped base, a central spike and arching gold jets (in the plane facing +z,
+    rotated by plane_ry about game Y), with a small glowing glass fan."""
+    mat = mat or deco_gold(); out = []
+    bx, by, bz = base
+    rot = math.radians(plane_ry)
+    def P(u, v, w=0.0):  # local plane coords -> game
+        return (bx + (u * math.cos(rot) + w * math.sin(rot)) * scale, by + v * scale, bz + (-u * math.sin(rot) + w * math.cos(rot)) * scale)
+    out.append(tube_path(name + '_spike', [P(0, 0), P(0, 0.42)], 0.012 * scale, mat))
+    for k in (-3, -2, -1, 1, 2, 3):
+        pts = [P(0, 0.04)]
+        for t in range(1, 7):
+            f = t / 6
+            pts.append(P(k * 0.06 * f * 2.2, 0.04 + (0.3 - abs(k) * 0.05) * math.sin(f * math.pi * 0.85)))
+        out.append(tube_path(name + '_jet', pts, 0.007 * scale, mat))
+    for i, (w, h) in enumerate(((0.26, 0.03), (0.18, 0.03), (0.1, 0.03))):
+        y0 = -0.09 + i * 0.03
+        a, b = P(-w / 2, y0, -0.02), P(w / 2, y0 + h, 0.02)
+        out.append(box(name + '_step', tuple(map(min, a, b)), tuple(map(max, a, b)), mat, bevel=0.003))
+    if shade is not None:
+        out.append(lathe(name + '_glass', [(0, 0), (0.07, 0.0), (0.11, 0.12), (0, 0.12)], P(0, 0.02, 0.03), shade, seg=10))
+    return out

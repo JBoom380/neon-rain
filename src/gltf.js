@@ -6,7 +6,9 @@
   const T = THREE;
   const TA = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array, 5121: Uint8Array, 5122: Int16Array, 5120: Int8Array };
   const NC = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
-  async function load(url) {
+  let pending = 0;
+  function load(url) { pending++; return load0(url).finally(() => { pending--; }); }
+  async function load0(url) {
     const buf = await (await fetch(url)).arrayBuffer();
     const dv = new DataView(buf); let off = 12, json = null, bin = null;
     while (off < buf.byteLength) { const len = dv.getUint32(off, true), type = dv.getUint32(off + 4, true); const chunk = buf.slice(off + 8, off + 8 + len); if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(chunk)); else bin = chunk; off += 8 + len; }
@@ -63,5 +65,5 @@
     });
     return { scene: root, animations: clips, materials: mats, extras: json.scenes[json.scene || 0].extras || {} };
   }
-  NR.gltf = { load };
+  NR.gltf = { load, get pending() { return pending; } };
 })();

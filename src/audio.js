@@ -1,5 +1,5 @@
 // NEON RAIN audio: John's score (assets/music/tracks.json) on two crossfading decks with a VO duck, seamless rain loops per scene
-// (OGG, MP3 fallback for iOS Safari), Media Session, and synthesized sfx (revolver, reload, lighter, heartbeat).
+// (OGG, MP3 fallback for iOS Safari), Media Session, and synthesized sfx (.45 pistol, magazine reload, brass, lighter, heartbeat).
 (function () {
   let ctx = null, master = null, sfxBus = null, unlocked = false, noiseBuf = null, humNodes = null;
   const S = () => NR.core.settings;
@@ -26,9 +26,15 @@
     o.connect(g); g.connect(sfxBus); o.start(t); o.stop(t + decay + 0.05);
   }
   const fx = {
-    shot() { if (!ensure()) return; const t = ctx.currentTime; noise(0.05, 'lowpass', 3800, 0.5, 0.9, 0.001, 0.22, t); noise(0.2, 'lowpass', 600, 0.7, 0.7, 0.002, 0.5, t); tone(110, 'sine', 0.8, 0.25, t, 40); noise(0.4, 'bandpass', 900, 0.4, 0.08, 0.05, 0.9, t + 0.05); },
+    shot() { if (!ensure()) return; const t = ctx.currentTime; // .45: a sharp crack, a short body, a fast room tail
+      noise(0.025, 'highpass', 2500, 0.6, 1.0, 0.0005, 0.08, t); noise(0.06, 'lowpass', 5200, 0.5, 0.8, 0.001, 0.16, t); noise(0.12, 'lowpass', 700, 0.8, 0.6, 0.002, 0.3, t);
+      tone(150, 'sine', 0.7, 0.16, t, 55); noise(0.3, 'bandpass', 1400, 0.5, 0.07, 0.03, 0.55, t + 0.04); },
+    slide() { if (!ensure()) return; const t = ctx.currentTime; tone(2200, 'square', 0.07, 0.025, t); noise(0.03, 'bandpass', 3000, 3, 0.18, 0.001, 0.05, t); tone(1500, 'square', 0.09, 0.03, t + 0.09); noise(0.04, 'bandpass', 2200, 2, 0.22, 0.001, 0.07, t + 0.09); },
+    magOut() { if (!ensure()) return; const t = ctx.currentTime; tone(1300, 'square', 0.05, 0.02, t); noise(0.05, 'bandpass', 900, 2, 0.15, 0.002, 0.08, t + 0.25); tone(240, 'triangle', 0.08, 0.12, t + 0.27, 160); },
+    magIn() { if (!ensure()) return; const t = ctx.currentTime; noise(0.03, 'bandpass', 1800, 2, 0.2, 0.001, 0.05, t); tone(1700, 'square', 0.08, 0.025, t + 0.02); },
+    brass() { if (!ensure()) return; const t = ctx.currentTime + 0.32; for (let i = 0; i < 3; i++) tone(5200 + Math.random() * 1800, 'triangle', 0.035 / (i + 1), 0.06, t + i * (0.07 + Math.random() * 0.05)); },
     enemyShot(dist) { if (!ensure()) return; const v = Math.max(0.12, 0.5 - dist * 0.015); noise(0.04, 'lowpass', 2600, 0.5, v, 0.001, 0.18); tone(140, 'sine', v * 0.6, 0.18, null, 50); },
-    dry() { tone(2400, 'square', 0.08, 0.03); },
+    dry() { tone(2600, 'square', 0.06, 0.02); noise(0.015, 'highpass', 3000, 0.7, 0.08, 0.001, 0.03); },
     reload() { if (!ensure()) return; const t = ctx.currentTime; tone(1800, 'square', 0.06, 0.03, t); noise(0.3, 'bandpass', 3500, 3, 0.12, 0.01, 0.35, t + 0.2); for (let i = 0; i < 6; i++) tone(2600 + i * 40, 'square', 0.04, 0.02, t + 0.55 + i * 0.07); tone(1500, 'square', 0.09, 0.04, t + 1.4); },
     hitFlesh() { noise(0.03, 'lowpass', 900, 0.8, 0.5, 0.001, 0.12); },
     head() { tone(2100, 'triangle', 0.15, 0.12); noise(0.03, 'lowpass', 1200, 0.8, 0.5, 0.001, 0.12); },
@@ -148,7 +154,8 @@
   function setVolumes() { rainLevel(); if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; }
   function init() {
     const B = NR.bus;
-    B.on('shot', () => fx.shot()); B.on('dryFire', () => fx.dry()); B.on('reload', () => fx.reload());
+    B.on('shot', () => { fx.shot(); fx.brass(); }); B.on('dryFire', () => fx.dry());
+    B.on('reload', d => { setTimeout(fx.magOut, 120); setTimeout(fx.magIn, d.dur * 600); if (d.empty) setTimeout(fx.slide, d.dur * 860); });
     B.on('nearMiss', () => fx.whizz()); B.on('hitEnemy', d => d.head ? fx.head() : fx.hitFlesh()); B.on('playerHurt', () => fx.hurt());
     B.on('enemyShot', d => { const P = NR.player; fx.enemyShot(P ? d.pos.distanceTo(P.pos) : 10); });
     B.on('smoke', () => { fx.lighter(); setTimeout(fx.inhale, 400); }); B.on('focus', () => fx.focus()); B.on('clue', () => fx.clue());

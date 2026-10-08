@@ -33,24 +33,36 @@
         vec3 col = texture2D(tCol, vUv).rgb;
         if (shaftOn > 0.5) { vec2 px = 2.0/res; float sh = texture2D(tShaft, vUv).r*0.36 + (texture2D(tShaft, vUv+vec2(px.x,px.y)).r + texture2D(tShaft, vUv+vec2(-px.x,px.y)).r + texture2D(tShaft, vUv+vec2(px.x,-px.y)).r + texture2D(tShaft, vUv-px).r)*0.16;
           col += shaftCol * sh * shaftK; }
-        if (bw < 0.5) { vec2 px = 1.0/res; vec3 hal = vec3(0.0);
+        if (bw < 0.5) { vec2 px = 1.0/res; vec3 hal = vec3(0.0), stk = vec3(0.0);
+          // halation: bright practicals bleed a warm halo
           for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398; vec2 o = vec2(cos(a), sin(a)) * px * (9.0 + 9.0 * mod(float(i), 2.0));
             vec3 c2 = texture2D(tCol, vUv + o).rgb; hal += max(c2 - 0.9, 0.0); }
-          col += hal * vec3(1.0, 0.55, 0.32) * 0.09; }
+          col += hal * vec3(1.0, 0.6, 0.35) * 0.09;
+          // anamorphic streak: a thin horizontal flare on the brightest lights, swelling now and then
+          for (int i = 1; i <= 6; i++) { float d = float(i) * float(i) * 0.0045; vec3 l1 = texture2D(tCol, vUv + vec2(d, 0.0)).rgb, l2 = texture2D(tCol, vUv - vec2(d, 0.0)).rgb;
+            stk += (max(l1 - 1.4, 0.0) + max(l2 - 1.4, 0.0)) * (1.0 - float(i) / 7.0); }
+          float swell = 0.35 + 0.65 * pow(max(0.0, sin(time * 0.31) * sin(time * 0.17 + 1.3)), 2.0);
+          col += dot(stk, vec3(0.33)) * vec3(0.35, 0.75, 1.0) * 0.06 * swell; }
         col = aces(col * expo); col = pow(col, vec3(1./2.2));
         float l = dot(col, vec3(0.299,0.587,0.114));
         float mx=max(col.r,max(col.g,col.b)), mn=min(col.r,min(col.g,col.b)); float sat=(mx-mn)/(mx+1e-4);
         float red = smoothstep(0.28,0.5,sat)*smoothstep(0.02,0.1,col.r-max(col.g,col.b))*smoothstep(0.42,0.3,col.g/(col.r+1e-3));
         red = max(red, clamp(1.0 - texture2D(tCol, vUv).a, 0.0, 1.0)); // sprites flag their painted reds through alpha
         if (bw > 0.5) { vec3 g = vec3(pow(l,1.08)); col = mix(g, col*vec3(1.1,0.9,0.9), clamp(red*1.4,0.,1.)); }
-        else { // NOIR COLOR: grey, cool shadows; warm sodium/incandescent amber, reds and neon teal-green stay saturated
+        else { // NOIR COLOR: warm amber practicals against cold teal shadows and haze; red only for lips, blood and red neon
           float hr = col.r - col.b, hg = col.g - col.r;
-          float warm = smoothstep(0.06, 0.2, hr) * smoothstep(0.22, 0.45, sat) * smoothstep(0.05, 0.22, mx);              // red..amber..orange
-          float teal = smoothstep(0.03, 0.12, hg + (col.b - col.r) * 0.5) * smoothstep(0.25, 0.45, sat) * smoothstep(0.25, 0.5, mx); // neon teal / green
-          float keep = clamp(max(max(warm, teal), red * smoothstep(0.03, 0.12, mx)), 0.0, 1.0);
-          vec3 grey = vec3(l) * mix(vec3(0.86, 0.95, 1.1), vec3(1.0, 0.98, 0.95), smoothstep(0.05, 0.6, l)); // cool shadows, neutral highlights
-          vec3 vivid = mix(vec3(l), col, 1.25);                                               // slight saturation boost on kept hues
-          col = mix(grey, vivid, keep * 0.92); col = max(col, 0.0); }
+          float strictRed = smoothstep(0.55, 0.75, sat) * smoothstep(0.12, 0.25, col.r - max(col.g, col.b)) * smoothstep(0.4, 0.28, col.g / (col.r + 1e-3)) * smoothstep(0.08, 0.2, mx);
+          red = max(strictRed, clamp(1.0 - texture2D(tCol, vUv).a, 0.0, 1.0));
+          float warm = smoothstep(0.04, 0.16, hr) * smoothstep(0.1, 0.3, sat) * smoothstep(0.16, 0.42, mx);    // lit warm areas: lamps, sconces, sodium
+          float teal = smoothstep(0.03, 0.12, hg + (col.b - col.r) * 0.5) * smoothstep(0.2, 0.4, sat) * smoothstep(0.15, 0.4, mx); // neon teal / cyan / green
+          // split tone: teal shadows and haze, warm-neutral highlights
+          vec3 split = l * mix(vec3(0.62, 0.95, 1.02), vec3(1.05, 0.98, 0.9), smoothstep(0.08, 0.55, l));
+          split += vec3(0.0, 0.016, 0.022) * (1.0 - smoothstep(0.0, 0.28, l));                                  // lifted teal haze in the blacks
+          vec3 amber = mx * vec3(1.0, 0.64, 0.3);                                                               // warm hues pulled to sodium amber
+          vec3 kept = mix(mix(amber, col, 0.35), col, red);                                                     // red stays red; other warm hues go amber
+          kept = mix(kept, mix(vec3(l), col, 1.2), teal);
+          float keep = clamp(max(max(warm * 0.85, teal), red), 0.0, 1.0);
+          col = max(mix(split, kept, keep), 0.0); }
         col = smoothstep(vec3(0.035), vec3(1.0), col); // deep blacks
         // scan: amber wash + scanlines
         col = mix(col, col*vec3(1.25,0.95,0.55) + vec3(0.03,0.02,0.0), scan*0.6);
@@ -124,6 +136,7 @@
     setState(s) { const prev = core.state; if (prev === s) return; core.state = s; NR.bus.emit('state', { state: s, prev }); },
     setScene(scene, shaft) {
       core.scene = scene; core.shaft = shaft || null; scene.add(camera); renderer.shadowMap.needsUpdate = true;
+      try { renderer.compile(scene, camera); if (core.vm) renderer.compile(core.vm.scene, camera); } catch (e) {} // compile all programs now (boot / behind the black cards), not on first draw
       if (shaft) { const u = shaftMat.uniforms; u.cookie.value = shaft.cookie; u.lightVP.value = shaft.lightVP; u.lightPos.value = shaft.pos; u.maxD.value = shaft.maxD || 9; u.yTop.value = shaft.yTop || 2.9; u.zMin.value = shaft.zMin == null ? -1e3 : shaft.zMin;
         post.uniforms.shaftCol.value.set(shaft.color || 0xd8ebff); post.uniforms.shaftK.value = shaft.k || 0.16; }
       post.uniforms.expo.value = scene.userData.expo || 1.15;
@@ -159,7 +172,7 @@
     if (core.shaft && core.shaft.on !== false) { shaftMat.uniforms.time.value = core.time; quad.material = shaftMat; renderer.setRenderTarget(srt); renderer.render(pScene, pCam); post.uniforms.shaftOn.value = 1; }
     else post.uniforms.shaftOn.value = 0;
     camera.rotation.x -= sy; camera.rotation.y -= sx;
-    const u = post.uniforms; u.time.value = core.time; u.bw.value = settings.bw ? 1 : 0;
+    const u = post.uniforms; u.time.value = core.time; u.bw.value = settings.film === 'bwred' ? 1 : 0; // only the FILM setting picks B&W RED
     u.hurt.value = core.fx.hurt; u.scan.value = core.fx.scan; u.focus.value = core.fx.focus; u.fade.value = core.fx.fade;
     if (flashT > 0) { flashT -= rdt; u.flash.value.set(flashC.r, flashC.g, flashC.b, Math.max(0, flashT / flashMax) * flashA); } else u.flash.value.w = 0;
     quad.material = post; renderer.setRenderTarget(null); renderer.render(pScene, pCam);

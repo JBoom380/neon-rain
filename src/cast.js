@@ -9,19 +9,43 @@
   const clean = (n) => T.PropertyBinding.sanitizeNodeName(n || '');
   const LOWER = new Set(['spine', 'thigh_L', 'shin_L', 'foot_L', 'toe_L', 'thigh_R', 'shin_R', 'foot_R', 'toe_R']);
 
-  // noir character shading: a faint amber rim keeps silhouettes off the black, and deep reds (ties, blood) keep colour
-  // through the B&W grade (alpha < 1 marks them for the post pass, as on Vela)
+  // noir character shading: a two-tone neon rim (teal from screen-right, red-magenta from screen-left) cuts the silhouettes
+  // out of the dark without flattening the key light and shadows; deep reds (ties, blood) keep colour through the grade
+  // (alpha < 1 marks them for the post pass, as on Vela)
   function charMaterial(m) {
     m.side = T.DoubleSide; m.shadowSide = T.BackSide; // cloth shells are open (hems, cuffs, coat skirts): show their insides too; back faces cast (no acne)
     m.onBeforeCompile = (sh) => {
-      sh.uniforms.uRim = { value: new T.Color(0xffa24a).multiplyScalar(0.16) };
-      sh.fragmentShader = 'uniform vec3 uRim;\n' + sh.fragmentShader.replace('#include <opaque_fragment>',
-        'outgoingLight += uRim * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);\n#include <opaque_fragment>\n' +
+      sh.uniforms.uRimA = { value: new T.Color(0x38d6ff).multiplyScalar(0.26) };
+      sh.uniforms.uRimB = { value: new T.Color(0xff2a5a).multiplyScalar(0.22) };
+      // matte, never blown out: cap albedo luminance (white shirts and the ivory suit stay cloth under the work lights)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n float lumA = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)); diffuseColor.rgb *= min(1.0, 0.55 / max(lumA, 1e-4));\n#ifdef USE_ROUGHNESSMAP\n float skinM = 1.0 - smoothstep(0.02, 0.045, abs(texture2D(roughnessMap, vRoughnessMapUv).r - 0.45)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15))) * vec3(1.02, 0.97, 0.95), 0.35 * skinM);\n#endif')
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n#ifdef USE_ROUGHNESSMAP\n float specK = texture2D(roughnessMap, vRoughnessMapUv).r; reflectedLight.directSpecular *= specK; reflectedLight.indirectSpecular *= specK;\n float skinK = 1.0 - smoothstep(0.02, 0.045, abs(specK - 0.45));\n reflectedLight.directSpecular *= 1.0 - 0.75 * skinK;\n reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, reflectedLight.directDiffuse * vec3(1.06, 0.94, 0.9), skinK);\n reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.30, 0.07, 0.05) * skinK * 0.6;\n#endif');
+      sh.fragmentShader = 'uniform vec3 uRimA, uRimB;\n' + sh.fragmentShader.replace('#include <opaque_fragment>',
+        'float nv = 1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0); float rimk = nv * nv * nv;\n' +
+        'outgoingLight += mix(uRimB, uRimA, smoothstep(-0.35, 0.35, normal.x)) * rimk * (1.0 - 0.85 * smoothstep(0.25, 0.85, normal.y));\n' +
+        'float pk = max(max(outgoingLight.r, outgoingLight.g), outgoingLight.b); float pkk = pk < 0.3 ? pk : 0.3 + (pk - 0.3) / (1.0 + (pk - 0.3) / 0.5); outgoingLight *= pkk / max(pk, 1e-4);\n#include <opaque_fragment>\n' + // soft shoulder: hot work lights never blow skin and cloth out
         ' float rq = diffuseColor.r / max(0.004, max(diffuseColor.g, diffuseColor.b)); gl_FragColor.a = 1.0 - smoothstep(4.0, 7.0, rq) * smoothstep(0.02, 0.05, diffuseColor.r) * 0.95;');
     };
-    m.customProgramCacheKey = () => 'nrCast'; m.needsUpdate = true;
+    m.customProgramCacheKey = () => 'nrCast6'; m.needsUpdate = true;
   }
 
+  // alpha hair cards: alpha-tested strands tinted per character, with a Kajiya-style anisotropic highlight running across
+  // the strands (strand direction from screen-space derivatives of the card UVs)
+  function hairCards(m, tint) {
+    m.alphaTest = 0.4; m.transparent = false; m.depthWrite = true; m.side = T.DoubleSide; m.metalness = 0; m.roughness = 0.5;
+    m.color.setRGB(Math.min(1, tint[0] * 1.6), Math.min(1, tint[1] * 1.6), Math.min(1, tint[2] * 1.6), T.LinearSRGBColorSpace);
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+        vec3 dp1 = dFdx(-vViewPosition), dp2 = dFdy(-vViewPosition); vec2 du1 = dFdx(vMapUv), du2 = dFdy(vMapUv);
+        vec3 Ts = normalize(dp1 * du2.y - dp2 * du1.y + 1e-6);
+        vec3 Vv = normalize(vViewPosition); vec3 Lk = normalize(vec3(-0.35, 0.75, 0.55));
+        vec3 Hh = normalize(Lk + Vv); float th = dot(Ts, Hh); float aniso = pow(sqrt(max(0.0, 1.0 - th * th)), 70.0);
+        float th2 = dot(Ts, normalize(vec3(0.5, 0.3, 0.6) + Vv)); float aniso2 = pow(sqrt(max(0.0, 1.0 - th2 * th2)), 24.0);
+        outgoingLight += diffuseColor.rgb * (aniso * 0.22 + aniso2 * 0.08);
+        #include <opaque_fragment>`);
+    };
+    m.customProgramCacheKey = () => 'nrHair'; m.needsUpdate = true;
+  }
   async function template(url) {
     const buf = await (await fetch(url)).arrayBuffer();
     const dv = new DataView(buf); let off = 12, json = null, bin = null;
@@ -33,9 +57,12 @@
     const tex = (info, srgb) => { if (!info) return null; const src = json.textures[info.index].source, k = src + (srgb ? 's' : 'l'); if (!texCache[k]) { const t = new T.Texture(images[src]); t.flipY = false; t.colorSpace = srgb ? T.SRGBColorSpace : T.NoColorSpace; t.anisotropy = 4; t.needsUpdate = true; texCache[k] = t; } return texCache[k]; };
     const mats = (json.materials || []).map(md => {
       const pb = md.pbrMetallicRoughness || {}, f = pb.baseColorFactor || [1, 1, 1, 1];
-      const m = new T.MeshStandardMaterial({ name: md.name, color: new T.Color().setRGB(f[0], f[1], f[2], T.LinearSRGBColorSpace),
-        metalness: pb.metallicFactor == null ? 1 : pb.metallicFactor, roughness: pb.roughnessFactor == null ? 1 : pb.roughnessFactor, map: tex(pb.baseColorTexture, true) });
+      // PBR with a baked specular-intensity map (R of the roughness/metal texture): cloth stays matte, skin, satin,
+      // leather and gun metal catch the light
+      const m = new T.MeshStandardMaterial({ name: md.name, color: new T.Color().setRGB(f[0], f[1], f[2], T.LinearSRGBColorSpace), map: tex(pb.baseColorTexture, true),
+        roughness: pb.roughnessFactor == null ? 1 : pb.roughnessFactor, metalness: pb.metallicFactor == null ? 1 : pb.metallicFactor });
       if (pb.metallicRoughnessTexture) { m.roughnessMap = m.metalnessMap = tex(pb.metallicRoughnessTexture, false); }
+      if (md.extras && md.extras.cards) { hairCards(m, md.extras.tint || [0.4, 0.3, 0.2]); return m; }
       if (md.normalTexture) { m.normalMap = tex(md.normalTexture, false); const s = md.normalTexture.scale || 1; m.normalScale.set(s, -s); }
       charMaterial(m);
       return m;
@@ -111,13 +138,15 @@
   const tplCache = {};
   function family(url) { if (!tplCache[url]) { tplCache[url] = template(url); tplCache[url].then(t => { tplCache[url].done = t; }, e => { console.warn('[cast] ' + url + ' failed', e); }); } return tplCache[url]; }
 
-  const URL = { thugs: 'models/cast/thugs.glb', gale: 'models/cast/gale.glb', synth: 'models/cast/synth.glb', miles: 'models/cast/miles.glb' };
-  const FAMILY = { thug_a: 'thugs', thug_b: 'thugs', thug_c: 'thugs', gale_a: 'gale', gale_b: 'gale', gale_c: 'gale', synth: 'synth', miles: 'miles' };
+  const URL = { thugs: 'models/cast/thugs.glb', gale: 'models/cast/gale.glb', synth: 'models/cast/synth.glb', miles: 'models/cast/miles.glb',
+    kastor: 'models/cast/kastor.glb', dane: 'models/cast/dane.glb', vela: 'models/cast/vela.glb', dolores: 'models/cast/dolores.glb', harrow: 'models/cast/harrow.glb' };
+  const FAMILY = { thug_a: 'thugs', thug_b: 'thugs', thug_c: 'thugs', gale_a: 'gale', gale_b: 'gale', gale_c: 'gale', synth: 'synth', miles: 'miles',
+    kastor: 'kastor', dane: 'dane', vela: 'vela', dolores: 'dolores', harrow: 'harrow' };
   const VARIANTS = Object.keys(FAMILY);
-  function preload(fams) { for (const f of fams || Object.keys(URL)) family(NR.ASSET + URL[f]); }
+  function preload(fams) { for (const f of fams || ['thugs', 'gale', 'synth', 'miles']) family(NR.ASSET + URL[f]); }
   function ready(variant) { const p = tplCache[NR.ASSET + URL[FAMILY[variant]]]; return p && p.done ? p.done : null; }
 
-  const WEAPONS = ['pistol', 'tommy', 'knife', 'flashlight'];
+  const WEAPONS = ['pistol', 'revolver', 'tommy', 'knife', 'flashlight'];
   class Rig {
     constructor(tpl, variant) {
       this.variant = variant; this.tpl = tpl;
@@ -127,7 +156,7 @@
       this.lod0 = this.nodes[variant]; this.lod1 = this.nodes[variant + '_lod1']; if (this.lod1) this.lod1.visible = false;
       this.weapons = WEAPONS.filter(w => this.nodes[variant + '_' + w]);
       const main = this.weapons.find(w => w !== 'flashlight') || null;
-      this.kind = main === 'knife' ? (this.weapons.includes('flashlight') ? 'knife_lamp' : 'knife') : main || 'none';
+      this.kind = main === 'knife' ? (this.weapons.includes('flashlight') ? 'knife_lamp' : 'knife') : main === 'revolver' ? 'pistol' : main || 'none';
       this.muzzle = main ? this.nodes[variant + '_' + main + '_muzzle'] : null;
       this.lampTip = this.nodes[variant + '_flashlight_muzzle'] || null;
       this.hat = this.nodes[variant + '_hat'] || null;
@@ -138,6 +167,8 @@
       this.speedOf = (n) => ((tpl.meta.anims[n] || {}).speed) || 1;
       this.play('L', 'idle', 0); this.play('U', 'idle', 0);
       this.mixer.update(Math.random() * 3);
+      this.root.updateMatrixWorld(true); const r0 = this.root.getWorldPosition(new T.Vector3());
+      this.ankle0 = Math.min(this.nodes.foot_L.getWorldPosition(new T.Vector3()).y, this.nodes.foot_R.getWorldPosition(new T.Vector3()).y) - r0.y;
     }
     has(n) { return !!this.tpl.sub[n]; }
     action(n, part) {
@@ -166,6 +197,49 @@
       bone.quaternion.copy(pw.invert().multiply(q)); bone.updateMatrixWorld(true);
     }
     lod(far) { if (!this.lod1) return; this.lod0.visible = !far; this.lod1.visible = far; }
+    // ---- foot locking: a foot that touches down is pinned to its world spot until it lifts (two-bone leg IK keeps the
+    // knee bending toward where it already points; the foot keeps its animated orientation)
+    rotateTo(bone, from, to) {
+      if (from.lengthSq() < 1e-10 || to.lengthSq() < 1e-10) return;
+      const q = new T.Quaternion().setFromUnitVectors(from.normalize(), to.normalize());
+      const bw = bone.getWorldQuaternion(new T.Quaternion()), pw = bone.parent.getWorldQuaternion(new T.Quaternion());
+      bone.quaternion.copy(pw.invert().multiply(q.multiply(bw))); bone.updateMatrixWorld(true);
+    }
+    legIK(s, Tgt) {
+      const th = this.nodes['thigh_' + s], sh = this.nodes['shin_' + s], ft = this.nodes['foot_' + s];
+      const H = th.getWorldPosition(new T.Vector3()), K = sh.getWorldPosition(new T.Vector3()), A = ft.getWorldPosition(new T.Vector3());
+      const fq = ft.getWorldQuaternion(new T.Quaternion());
+      const a = H.distanceTo(K), b = K.distanceTo(A);
+      const dv = Tgt.clone().sub(H); let d = dv.length(); if (d < 1e-5) return; dv.divideScalar(d);
+      d = Math.min(Math.max(d, Math.abs(a - b) + 1e-3), a + b - 1e-3);
+      const pole = K.clone().sub(H); pole.addScaledVector(dv, -pole.dot(dv)); if (pole.lengthSq() < 1e-8) pole.set(0, 0, 1); pole.normalize();
+      const ca = (a * a + d * d - b * b) / (2 * a * d), sa = Math.sqrt(Math.max(0, 1 - ca * ca));
+      const K2 = H.clone().addScaledVector(dv, a * ca).addScaledVector(pole, a * sa);
+      this.rotateTo(th, K.clone().sub(H), K2.clone().sub(H));
+      const A1 = ft.getWorldPosition(new T.Vector3()), K1 = sh.getWorldPosition(new T.Vector3());
+      this.rotateTo(sh, A1.sub(K1), H.clone().addScaledVector(dv, d).sub(K1));
+      const sw = sh.getWorldQuaternion(new T.Quaternion()); ft.quaternion.copy(sw.invert().multiply(fq)); ft.updateMatrixWorld(true);
+    }
+    footLock(dt, on, groundY, release = 0.28) {
+      if (this.ankle0 == null) return;
+      this.fl = this.fl || { L: { lock: null, w: 0 }, R: { lock: null, w: 0 } };
+      if (this.flClip !== this.layerName.L) { this.flClip = this.layerName.L; this.fl.L.h = []; this.fl.R.h = []; } // new gait, new contact heights
+      for (const s of ['L', 'R']) {
+        const st = this.fl[s], A = this.nodes['foot_' + s].getWorldPosition(new T.Vector3());
+        // contact height = this foot's lowest point over the last stride (mocap feet land at different heights)
+        this.t_ = (this.t_ || 0) + (s === 'L' ? dt : 0);
+        st.h = st.h || []; st.h.push([this.t_, A.y]); while (st.h.length && st.h[0][0] < this.t_ - 0.8) st.h.shift();
+        st.lo = Math.min(...st.h.map(q => q[1]));
+        const vy = st.py == null ? 0 : (A.y - st.py) / Math.max(dt, 1e-3); st.py = A.y;
+        const down = on && A.y < st.lo + 0.022 && (st.lock || Math.abs(vy) < 0.5);
+        if (down && !st.lock) { st.lock = A.clone(); st.w = 1; }               // pin at once: zero offset at touch-down
+        if ((!down || Math.hypot(st.lock.x - A.x, st.lock.z - A.z) > release) && st.lock) { st.out = st.lock; st.lock = null; }
+        if (!st.lock) st.w = Math.max(0, st.w - dt * 12);                       // ease the leg back to the clip as it lifts
+        const tgt = st.lock || st.out; if (!tgt || st.w < 0.01) continue;
+        const Tg = A.clone(); Tg.x += (tgt.x - A.x) * st.w; Tg.z += (tgt.z - A.z) * st.w;
+        this.legIK(s, Tg); 
+      }
+    }
     update(dt) { this.mixer.update(dt); this.root.updateMatrixWorld(true); }
   }
 

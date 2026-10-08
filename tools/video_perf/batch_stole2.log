@@ -1,0 +1,7 @@
+done 1728.6 s [('vperf', 'vela_stole_s74_00001_.mp4')]
+done 1913.8 s [('vperf', 'vela_stole_s75_00001_.mp4')]
+  File "C:\Users\John\Documents\GitHub\projects\neon-rain-fps\tools\video_perf\gen.py", line 8
+    def if mode == "ltx" and len(sys.argv) > 9:
+        ^^
+SyntaxError: invalid syntax
+ALLDONE

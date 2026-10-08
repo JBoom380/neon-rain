@@ -2,8 +2,8 @@
 // RELOAD / SMOKE / SCAN / INTERACT on the right), plus WASD + mouse. Output: NR.controls.state, read once per frame.
 (function () {
   const C = NR.cfg, clamp = NR.clamp, DEAD = 0.1;
-  const state = { mx: 0, my: 0, lookX: 0, lookY: 0, fire: false, reload: false, scan: false, smoke: false, interact: false, caseFile: false, pause: false, any: false };
-  const pend = { reload: false, smoke: false, interact: false, caseFile: false, pause: false, any: false, lookX: 0, lookY: 0 };
+  const state = { mx: 0, my: 0, lookX: 0, lookY: 0, fire: false, gun: false, reload: false, scan: false, smoke: false, interact: false, caseFile: false, pause: false, any: false };
+  const pend = { gun: false, reload: false, smoke: false, interact: false, caseFile: false, pause: false, any: false, lookX: 0, lookY: 0 };
   let root = null, el = {}, shown = false, lastDevice = 'none', core = null;
   const L = { k: 1, R: 56, sx: 0, sy: 0, fx: 0, fy: 0, fr: 44, bx: 0, rr: 30, ry: 0, sy2: 0, cy: 0, iy: 0, ir: 36, w: 390, h: 844, top: 90 };
   function layout() {
@@ -13,9 +13,9 @@
     L.fx = L.sx + Math.round(14 * k); L.fy = L.sy - L.R - Math.round(30 * k) - L.fr;
     L.bx = w - Math.round(18 * k) - L.rr; L.ry = h - Math.round(30 * k) - sb - L.rr;
     L.smy = L.ry - Math.round(74 * k); L.scy = L.smy - Math.round(74 * k); L.iy = L.scy - Math.round(70 * k) - L.ir;
-    L.ix = w - Math.round(18 * k) - L.ir;
+    L.ix = w - Math.round(18 * k) - L.ir; L.gx = L.bx - Math.round(74 * k); L.gy = L.ry; // GUN: left of RELOAD
     if (!root) return;
-    place(el.fire, L.fx, L.fy, L.fr); place(el.reload, L.bx, L.ry, L.rr); place(el.smoke, L.bx, L.smy, L.rr); place(el.scan, L.bx, L.scy, L.rr); place(el.interact, L.ix, L.iy, L.ir);
+    place(el.fire, L.fx, L.fy, L.fr); place(el.reload, L.bx, L.ry, L.rr); place(el.smoke, L.bx, L.smy, L.rr); place(el.scan, L.bx, L.scy, L.rr); place(el.interact, L.ix, L.iy, L.ir); place(el.gun, L.gx, L.gy, L.rr);
     el.base.style.width = el.base.style.height = L.R * 2 + 'px'; el.knob.style.width = el.knob.style.height = Math.round(52 * k) + 'px';
     root.style.fontSize = Math.round(11 * k) + 'px';
     if (stick.id === null) stickHome();
@@ -40,14 +40,17 @@
 #nrc .interact{border-color:#e8c890;color:#fff1d6;box-shadow:0 0 14px rgba(232,200,144,.55);display:none;font-size:.95em}
 #nrc .interact.show{display:flex;animation:nrcPulse 1.2s infinite}
 #nrc .fire.empty{opacity:.55}
+#nrc .gun{flex-direction:column;font-size:.85em}
+#nrc .gun.on{border-color:#e8b040;color:#ffe2a0}
+#nrc .reload.need{border-color:#e8b040;color:#ffe2a0;animation:nrcPulse .7s infinite}
 @keyframes nrcPulse{50%{box-shadow:0 0 22px rgba(232,200,144,.95)}}`;
   function build() {
     const ui = document.getElementById('ui'); const s = document.createElement('style'); s.textContent = CSS; document.head.appendChild(s);
     root = document.createElement('div'); root.id = 'nrc';
     root.innerHTML = '<div class="base"></div><div class="knob"></div><div class="btn fire"><span>FIRE</span></div><div class="btn reload"><i>&#x21bb;</i><span>RELOAD</span></div>' +
-      '<div class="btn smoke"><span>SMOKE</span><b>6</b></div><div class="btn scan"><i>&#x25ce;</i><span>SCAN</span></div><div class="btn interact"><span>TALK</span></div>';
+      '<div class="btn gun"><svg viewBox="0 0 24 16" width="1.9em" height="1.25em"><path d="M2 3h17l1 2h2v3h-9l-1 2h-3l-1.6 5H3l1.8-6H2z" fill="currentColor"/></svg><span>GUN</span></div><div class="btn smoke"><span>SMOKE</span><b>6</b></div><div class="btn scan"><i>&#x25ce;</i><span>SCAN</span></div><div class="btn interact"><span>TALK</span></div>';
     ui.appendChild(root);
-    for (const n of ['base', 'knob', 'fire', 'reload', 'smoke', 'scan', 'interact']) el[n] = root.querySelector('.' + n);
+    for (const n of ['base', 'knob', 'fire', 'gun', 'reload', 'smoke', 'scan', 'interact']) el[n] = root.querySelector('.' + n);
     el.smokeN = el.smoke.querySelector('b'); el.interLabel = el.interact.querySelector('span');
   }
 
@@ -71,6 +74,7 @@
       if (isTarget(t.target)) continue;
       const [x, y] = local(t); let k = null;
       if (near(x, y, L.fx, L.fy, L.fr * 1.25)) { k = 'fire'; fireTouches++; }
+      else if (NR.player.armed && near(x, y, L.gx, L.gy, L.rr * 1.2)) { k = 'gun'; pend.gun = true; }
       else if (near(x, y, L.bx, L.ry, L.rr * 1.2)) { k = 'reload'; pend.reload = true; }
       else if (near(x, y, L.bx, L.smy, L.rr * 1.2)) { k = 'smoke'; pend.smoke = true; }
       else if (near(x, y, L.bx, L.scy, L.rr * 1.2)) { k = 'scan'; scanTouches++; }
@@ -106,11 +110,11 @@
 
   // ---- keyboard + mouse ----
   const keys = new Set(); let mouseFire = false, locked = false;
-  const GAME = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'Tab', 'KeyC', 'Space']);
+  const GAME = new Set(['KeyG', 'Digit1', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'Tab', 'KeyC', 'Space']);
   function onKey(e) {
     lastDevice = 'keys'; if (GAME.has(e.code) && inPlay()) e.preventDefault(); if (e.repeat) return; keys.add(e.code); pend.any = true;
     if (!inPlay()) return;
-    if (e.code === 'KeyR') pend.reload = true; else if (e.code === 'KeyQ') pend.smoke = true; else if (e.code === 'KeyE') pend.interact = true;
+    if (e.code === 'KeyG' || e.code === 'Digit1') pend.gun = true; else if (e.code === 'KeyR') pend.reload = true; else if (e.code === 'KeyQ') pend.smoke = true; else if (e.code === 'KeyE') pend.interact = true;
     else if (e.code === 'Tab' || e.code === 'KeyC') pend.caseFile = true; else if (e.code === 'Escape' || e.code === 'KeyP') pend.pause = true;
   }
   function onMouseMove(e) { if (!inPlay()) return; if (locked || (e.buttons & 2)) { const s = C.LOOK_MOUSE * (core.settings.sens || 1); pend.lookX += e.movementX * s; pend.lookY += e.movementY * s; } }
@@ -131,11 +135,15 @@
     addEventListener('keydown', onKey, true); addEventListener('keyup', e => keys.delete(e.code), true);
     addEventListener('mousemove', onMouseMove); addEventListener('mousedown', onMouseDown); addEventListener('mouseup', e => { if (e.button === 0) mouseFire = false; });
     addEventListener('contextmenu', e => e.preventDefault());
+    let wheelT = 0; addEventListener('wheel', e => { if (!inPlay()) return; const now = performance.now(); if (now - wheelT > 350 && Math.abs(e.deltaY) > 4) { wheelT = now; pend.gun = true; } }, { passive: true });
     addEventListener('blur', () => { keys.clear(); release(); mouseFire = false; });
     document.addEventListener('visibilitychange', () => { if (document.hidden) { keys.clear(); release(); if (inPlay()) pend.pause = true; } });
     NR.bus.on('resize', layout); NR.bus.on('state', () => { release(); mouseFire = false; });
     layout();
   }
+  // gamepad: Y (button 3) draws / holsters
+  let padY = false;
+  function pollPad() { try { const l = navigator.getGamepads ? navigator.getGamepads() : []; for (const g of l) if (g && g.connected) { const y = !!(g.buttons[3] && g.buttons[3].pressed); if (y && !padY && inPlay()) pend.gun = true; padY = y; break; } } catch (e) {} }
   function exitLock() { if (document.pointerLockElement) try { document.exitPointerLock(); } catch (e) {} }
   const kd = (a, b) => keys.has(a) || keys.has(b);
   function update() {
@@ -149,9 +157,9 @@
       state.fire = fireTouches > 0 || mouseFire; state.scan = scanTouches > 0 || keys.has('KeyF');
     } else { state.mx = state.my = state.lookX = state.lookY = 0; state.fire = state.scan = false; }
     pend.lookX = pend.lookY = 0;
-    state.reload = play && pend.reload; state.smoke = play && pend.smoke; state.interact = play && pend.interact; state.caseFile = pend.caseFile; state.pause = pend.pause; state.any = pend.any;
-    pend.reload = pend.smoke = pend.interact = pend.caseFile = pend.pause = pend.any = false;
-    if (NR.controls.inject && play) { const j = NR.controls.inject; for (const k in j) { if (k === 'lookX' || k === 'lookY') state[k] += j[k]; else state[k] = state[k] || j[k]; } j.lookX = j.lookY = 0; j.reload = j.smoke = j.interact = false; } // test autopilot
+    pollPad(); state.gun = play && pend.gun; state.reload = play && pend.reload; state.smoke = play && pend.smoke; state.interact = play && pend.interact; state.caseFile = pend.caseFile; state.pause = pend.pause; state.any = pend.any;
+    pend.gun = pend.reload = pend.smoke = pend.interact = pend.caseFile = pend.pause = pend.any = false;
+    if (NR.controls.inject && play) { const j = NR.controls.inject; for (const k in j) { if (k === 'lookX' || k === 'lookY') state[k] += j[k]; else state[k] = state[k] || j[k]; } j.lookX = j.lookY = 0; j.gun = j.reload = j.smoke = j.interact = false; } // test autopilot
     if (shown) draw();
   }
   let vKnob = '', vBase = '';
@@ -160,8 +168,8 @@
     const b = 'translate3d(' + (stick.bx - L.R) + 'px,' + (stick.by - L.R) + 'px,0)'; if (b !== vBase) { vBase = b; el.base.style.transform = b; }
     let kx = stick.bx, ky = stick.by; if (act) { const dx = stick.x - stick.bx, dy = stick.y - stick.by, l = Math.hypot(dx, dy), m = Math.min(l, L.R); if (l > 0) { kx += dx / l * m; ky += dy / l * m; } }
     const kr = Math.round(26 * L.k), kn = 'translate3d(' + Math.round(kx - kr) + 'px,' + Math.round(ky - kr) + 'px,0)'; if (kn !== vKnob) { vKnob = kn; el.knob.style.transform = kn; }
-    const P = NR.player; el.smokeN.textContent = P.pack; el.scan.classList.toggle('on', state.scan); el.fire.classList.toggle('empty', P.rounds === 0);
-    el.fire.style.display = el.reload.style.display = P.armed ? 'flex' : 'none';
+    const P = NR.player; el.smokeN.textContent = P.pack; el.scan.classList.toggle('on', state.scan); el.fire.classList.toggle('empty', P.rounds === 0); el.reload.classList.toggle('need', !!P.slideLock && P.reloadT <= 0);
+    el.fire.style.display = el.reload.style.display = P.armed && P.drawn ? 'flex' : 'none'; el.gun.style.display = P.armed ? 'flex' : 'none'; el.gun.classList.toggle('on', !!P.drawn);
   }
   function setInteract(label) { if (!root) return; const on = !!label; el.interact.classList.toggle('show', on); if (on && el.interLabel.textContent !== label) el.interLabel.textContent = label; }
   NR.controls = { state, init, update, layout, setInteract, exitLock, release, get lastDevice() { return lastDevice; }, get touchLayout() { return L; }, get root() { return root; } };

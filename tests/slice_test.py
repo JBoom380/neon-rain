@@ -30,7 +30,8 @@ PILOT_JS = """() => {
     NR.controls.inject.lookX = ey * rate; NR.controls.inject.lookY = ep * rate; return Math.hypot(ey, ep); }
   (function tick() { requestAnimationFrame(tick);
     const pl = window.__pilot, P = NR.player, J = NR.controls.inject; if (!P || NR.core.state !== 'PLAY') { J.mx = J.my = 0; J.fire = false; return; }
-    J.mx = J.my = 0; J.fire = false;
+    J.mx = J.my = 0; J.fire = false; if (P.slideLock && P.reloadT <= 0) J.reload = true; // a human reloads when the slide locks
+    if (pl.fight && P.armed && !P.drawn && P.drawT <= 0) J.gun = true; // draw for a fight
     let target = null;
     if (pl.fight) { let bd = 1e9; const e0 = P.eye();
       for (const en of NR.actors.enemies) { if (en.dead || en.state === 'dormant') continue; const h = en.headC; const body = { x: h.x, y: h.y - 0.35, z: h.z };
@@ -182,7 +183,7 @@ def main():
         until("NR.game.beat === 'club_scan' && NR.core.state === 'PLAY'", 90)
         wait(500); shot("club", "The Blue Orchid: stage light, smoke, booths")
         fps["club"] = ev(FPS_JS)
-        ev("NR.core.settings.bw = false"); wait(400); shot("color", "Settings: B&W off (colour grade)"); ev("NR.core.settings.bw = true")
+        ev("NR.core.settings.film = 'bwred'"); wait(400); shot("bwred", "Settings: FILM B&W RED"); ev("NR.core.settings.film = 'noir'"); wait(200)
         press("smoke"); wait(300)
         def scan_clue(cid, stand, pt, label):
             go([stand], face=pt, timeout=40); wait(500)

@@ -1,4 +1,4 @@
-"""characters_v1.png: a turntable sheet per cast member (front, 3/4, side, back, combat pose, face) under noir light, plus
+"""characters_v2.png: a turntable sheet per cast member (front, 3/4, side, back, combat pose, face) under noir light, plus
 the in-game shots from tests/cast_test.py (alley fight, Miles, club fight). Usage: python tests/cast_sheet.py (run cast_test.py first)"""
 import pathlib, socket, subprocess, sys, time
 from playwright.sync_api import sync_playwright
@@ -38,7 +38,7 @@ W = 24 + cols * (TW + 8) + 24 + 2 * (GW + 10)
 rows_h = len(CAST) * (TH + LAB + 8)
 H = max(rows_h, 3 * (GH + 40)) + 90
 img = Image.new("RGB", (W, H), (12, 11, 10)); d = ImageDraw.Draw(img)
-d.text((24, 22), "NEON RAIN: the cast, v1 (rigged CharMorph people, CMU mocap, 1k baked textures, <15k triangles each)", fill=(236, 222, 196), font=fb)
+d.text((24, 22), "NEON RAIN: the cast, v2 (Poly Haven fabrics, new hats, neon rim; CharMorph people, CMU mocap, <15k triangles each)", fill=(236, 222, 196), font=fb)
 y = 80
 for vid, label, pose, _ in CAST:
     d.text((24, y), label + "   [front, 3/4, side, back, " + pose + ", face]", fill=(232, 176, 64), font=f)
@@ -50,5 +50,5 @@ for k, (g, l) in enumerate(game):
     col, row = k % 2, k // 2
     x0, y0 = gx + col * (GW + 10), 80 + row * (GH + 40)
     img.paste(Image.open(OUT / g).convert("RGB").resize((GW, GH), Image.LANCZOS), (x0, y0 + 26)); d.text((x0, y0), l, fill=(232, 176, 64), font=f)
-img.save(OUT / "characters_v1.png")
-print("wrote", OUT / "characters_v1.png", img.size, "ERRORS", len(errs)); [print(" ", e[:200]) for e in errs]
+img.save(OUT / "characters_v2.png")
+print("wrote", OUT / "characters_v2.png", img.size, "ERRORS", len(errs)); [print(" ", e[:200]) for e in errs]

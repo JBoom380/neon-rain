@@ -19,13 +19,13 @@
     for (const c of G.chars) c.remove(); G.chars = []; A.clear(); G.triggers = []; G.interacts = []; G.clues = [];
     core.setScene(L.scene, L.shaft); NR.fx.attach(L); P.setLevel(L);
     P.place(L.spawn.pos, L.spawn.yaw, 0);
-    NR.audio.ambience(NR.RAIN[name] || []);
+    if (NR.audio.unlocked) NR.audio.ambience(NR.RAIN[name] || []); // no audio work before TAP TO ENTER (AudioContext setup stalls the first frames)
     return L;
   }
   G.load = load;
   function yawPitchTo(p) { const e = P.eye(), dx = p.x - e.x, dy = p.y - e.y, dz = p.z - e.z; return [Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))]; }
   function lookAt(p, secs) { G.lookTarget = p; G.lookRate = secs ? 3 / secs : 4; }
-  function setState(s) { core.setState(s); UI.letterbox(s === 'CUTSCENE'); }
+  function setState(s) { if (s === 'CUTSCENE' && NR.player.holster) NR.player.holster(); core.setState(s); UI.letterbox(s === 'CUTSCENE'); }
   async function scene(lines) { setState('CUTSCENE'); await UI.lines(lines); }
 
   // ---------------------------------------------------------------- interactables, clues, triggers
@@ -97,6 +97,8 @@
     UI.toast('LIVES ' + P.lives, 'Back on your feet. The rain did not wait.', 2.5);
     setState('PLAY'); await core.fadeTo(0, 0.6);
   });
+  NR.bus.on('magPickup', d => UI.toast('+1 MAGAZINE', 'Off his belt. Magazines: ' + d.mags, 1.8));
+  NR.bus.on('noMags', () => UI.toast('NO MAGAZINES', 'Take one off a man you dropped.', 2));
   NR.bus.on('enemyDown', d => {
     const e = d.enemy; if (e.drops && Math.random() < e.drops) { P.pack = Math.min(C.PACK_MAX, P.pack + 1); UI.toast('+1 SMOKE', 'Lifted from his breast pocket.', 2); }
     if (d.head) UI.toast('HEAD SHOT', '', 1.0);
@@ -149,20 +151,20 @@
     await UI.lines(S.office.light); await UI.tutorial(S.office.smokeTut);
     await UI.lines(S.office.after);
     G.beat = 'office_leave';
-    vela.walkTo([V3(-1.5, 0, -2.4), V3(-1.0, 0, -4.2), V3(-1.0, 0, -6.2)], 1.1).then(() => { vela.visible = false; });
+    vela.walkTo([V3(-1.5, 0, -2.4), V3(-1.0, 0, -4.2), V3(-1.0, 0, -6.2)], 1.1, { stop: false }).then(() => { vela.visible = false; });
     await UI.lines(S.office.leave); await waitFor(() => !vela.path);
     G.lookTarget = null; G.lockMove = false; NR.audio.cue('02');
-    // take the revolver, go
+    // take the pistol, go
     let took = false;
-    interact({ pos: V3(-0.12, 0.8, -0.35), r: 1.5, label: 'TAKE GUN', enabled: () => !took, use: async () => { took = true; L.deskGun.visible = false; P.armed = true; P.rounds = C.GUN_ROUNDS; NR.audio.fx.reload(); setState('CUTSCENE'); await UI.tutorial(S.office.gunTut); setState('PLAY'); objective('Miles is waiting. Go out the door.'); } });
-    setState('PLAY'); G.beat = 'office_play'; objective('Take your revolver from the desk.');
+    interact({ pos: V3(-0.12, 0.8, -0.35), r: 1.5, label: 'TAKE GUN', enabled: () => !took, use: async () => { took = true; L.deskGun.visible = false; P.armed = true; P.rounds = C.GUN_ROUNDS; NR.audio.fx.reload(); setState('CUTSCENE'); await UI.tutorial(S.office.gunTut); setState('PLAY'); objective('GUN draws and holsters. Then go: Miles is waiting.'); } });
+    setState('PLAY'); G.beat = 'office_play'; objective('Take your pistol from the desk.');
     await waitFor(() => took && P.pos.z < -4.75);
     objective(''); setState('CUTSCENE'); await core.fadeTo(1, 0.8);
   }
 
   // ================================================================ BEAT 2: the alley
   async function alley() {
-    G.beat = 'alley'; NR.audio.cue('01'); await UI.card(S.alley.card, 2.4);
+    G.beat = 'alley'; NR.audio.cue('01'); await UI.eye(); await UI.card(S.alley.card, 2.4);
     const L = load('alley'); P.armed = true; P.lives = C.LIVES; P.reset(); P.place(L.spawn.pos, 0, 0);
     setState('CUTSCENE'); lookAt(V3(0, 1.4, -20), 2); core.fadeTo(0, 1.2);
     A.corpse(L, L.bodyPos, 0.4); NR.fx.pool(L.bodyPos.clone().add(V3(0.1, 0, -0.5)), 'human'); NR.fx.pool(L.bodyPos.clone().add(V3(-0.2, 0, 0.2)), 'human');
@@ -188,7 +190,7 @@
 
   // ================================================================ BEAT 3: the Blue Orchid
   async function club() {
-    G.beat = 'club'; NR.audio.cue('01'); await UI.card(S.club.card, 2.4);
+    G.beat = 'club'; NR.audio.cue('01'); await UI.eye(); await UI.card(S.club.card, 2.4);
     const L = load('club'); P.lives = C.LIVES; P.reset(); P.place(L.spawn.pos, 0, 0);
     const dol = new A.Painted('dolores', L, L.doloresPos, Math.atan2(-5.6, 12)); G.chars.push(dol);
     const fightOnly = new URLSearchParams(location.search).get('beat') === 'clubfight'; // dev: straight to the club gunfight
@@ -255,7 +257,7 @@
     NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club); NR.neon.start();
     G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null); NR.neon.stop();
     G.t0 = performance.now(); G.titleCam = false;
-    await core.fadeTo(1, 0.6);
+    await core.fadeTo(1, 0.6); await UI.eye(); // signature transition: the city in an eye
     const skip = new URLSearchParams(location.search).get('beat'); // dev: ?beat=alley or ?beat=club
     const toClub = skip === 'club' || skip === 'clubfight';
     if (skip !== 'alley' && !toClub) await office();
@@ -305,8 +307,18 @@
     for (const who of ['vela', 'dolores']) A.preload(who);
     if (core.settings.chars === '3d') A.loadGLB(NR.ASSET + A.MODELS.vela).catch(() => {});
     core.startLoop();
-    window.READY = true;
     run().catch(e => console.error('[NR.game.run]', e));
+    // READY (and TAP TO ENTER) once the landing scene's async models have loaded and every program is compiled,
+    // so no shader compile stalls the menu after the tap
+    const t0 = performance.now(); let quiet = 0;
+    (function settle() {
+      const busy = NR.gltf && NR.gltf.pending > 0;
+      quiet = busy ? 0 : quiet + 1;
+      if (quiet >= 3 || performance.now() - t0 > 12000) {
+        try { core.renderer.compile(core.scene, core.camera); if (core.vm) core.renderer.compile(core.vm.scene, core.camera); } catch (e) {}
+        requestAnimationFrame(() => requestAnimationFrame(() => { window.READY = true; }));
+      } else setTimeout(settle, 150);
+    })();
   }
   boot();
 })();

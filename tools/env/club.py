@@ -42,6 +42,7 @@ M = dict(
     cloth=flat('cloth', (0.6, 0.55, 0.48), rough=0.8),
 )
 NEONM = {}
+DG, DL = deco_gold(), deco_lacquer()
 
 
 def neon_mat(col, name, strength=18.0):
@@ -90,12 +91,16 @@ for (lo, hi) in (((-HW, WS - 0.03, Z1), (-HW + 0.04, WS + 0.04, Z0)), ((HW - 0.0
 for z in range(-22, 1, 4):
     PROPS.append(box('beam', (-HW, RH - 0.28, z - 0.15), (HW, RH, z + 0.15), M['trim'], tile=1.0, bevel=0.01))
 # entrance doors (front) and kitchen door (left, back)
-PROPS.append(box('fdoor', (-0.9, 0, Z0 - 0.05), (0.9, 2.4, Z0), M['barwood'], tile=0.9, bevel=0.01))
+for x0, x1 in ((-0.9, -0.02), (0.02, 0.9)):
+    PROPS.append(box('fdoor', (x0, 0, Z0 - 0.05), (x1, 2.4, Z0), DL, bevel=0.01))
+for x in (-0.46, 0.46):
+    PROPS += deco_porthole('fport', (x, 1.55, Z0 - 0.07), 0.17)
+    PROPS += deco_stepped_frame('fpanel', 'z', (x, 0.6, Z0 - 0.06), 0.62, 0.7, t=0.025, steps=1)
 PROPS.append(box('fdoorc', (-1.0, 2.4, Z0 - 0.08), (1.0, 2.55, Z0), M['brass'], bevel=0.01))
 for x in (-0.15, 0.15):
     PROPS.append(box('fdoorh', (x - 0.02, 0.9, Z0 - 0.09), (x + 0.02, 1.4, Z0 - 0.05), M['brass']))
 PROPS.append(box('kdoor', (-HW, 0, -16.6), (-HW + 0.05, 2.4, -15.4), M['barwood'], tile=0.9, bevel=0.01))
-PROPS.append(box('kdoorwin', (-HW + 0.05, 1.5, -16.15), (-HW + 0.06, 1.85, -15.85), M['shade']))
+PROPS += deco_porthole('kport', (-HW + 0.07, 1.6, -16.0), 0.15, plane='x')
 
 # ---------------------------------------------------------------- stage, curtain, piano, mic
 PROPS.append(box('stage', (-7, 0, -24), (4, 0.6, -18), M['stagefront'], tile=0.9, bevel=0.01))
@@ -125,7 +130,11 @@ for p in cur.data.polygons:
 PROPS.append(cur)
 PROPS.append(box('valance', (-7.2, RH - 0.7, -23.75), (4.2, RH - 0.15, -23.45), M['velvet'], tile=1.2, bevel=0.03))
 for x in (-7.3, 4.0):
-    PROPS.append(box('proscenium', (x, 0.6, -23.8), (x + 0.3, RH, -23.3), M['trim'], bevel=0.02))
+    PROPS.append(box('proscenium', (x, 0.6, -23.8), (x + 0.3, RH, -23.3), DL, bevel=0.01))
+    for k in range(3):   # stepped crown on the pier
+        PROPS.append(box('prostep', (x - 0.03 - 0.03 * k, RH - 0.5 - 0.12 * k, -23.82), (x + 0.33 + 0.03 * k, RH - 0.42 - 0.12 * k, -23.26 + 0.02 * k), DG, bevel=0.004))
+    for fx in (0.05, 0.15, 0.25):
+        PROPS.append(cyl('proflute', (x + fx, 0.62, -23.28), 0.018, RH - 0.95, DG, seg=8))
 # upright piano (stage left)
 PX, PZ = -5.2, -21.5
 PROPS.append(box('piano', (PX - 0.8, 0.62, PZ - 0.35), (PX + 0.8, 1.9, PZ + 0.0), M['black'], bevel=0.02))
@@ -160,6 +169,7 @@ for k in range(5):   # orchid petals
         pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang), -23.36))
     NEON.append(tube_path('petal', pts, 0.011, npk))
 NEON.append(tube_path('stem', [(2.35, 3.6, -23.36), (2.25, 3.1, -23.36), (2.4, 2.7, -23.36)], 0.01, nt))
+PROPS += deco_sunburst('arch', (-1.5, 0.62, -23.36), 2.75, 3.3, n=45, thick=0.02, hub=False, w=(0.035, 0.05))
 light('AREA', (-1.5, 3.4, -22.9), NEON_BLUE, 80, gaim=(-1.5, 0.6, -20.5), size=(5.0, 0.6), name='neon_blue')
 light('AREA', (2.35, 3.4, -22.9), (1.0, 0.1, 0.45), 50, gaim=(2.4, 1.5, -18.0), size=(0.7, 0.7), name='neon_pink')
 # a red neon over the bar
@@ -169,13 +179,22 @@ light('AREA', (-7.6, 3.15, -9.0), NEON_RED, 90, gaim=(-3.0, 2.0, -9.0), size=(0.
 
 # ---------------------------------------------------------------- the bar (left wall)
 PROPS.append(box('barbody', (-5.8, 0, -14), (-5.0, 1.06, -4), M['barwood'], tile=0.9, bevel=0.015))
-PROPS.append(box('barfront', (-5.02, 0.12, -13.9), (-4.98, 0.98, -4.1), M['leather'], tile=0.5, bevel=0.01))
+PROPS.append(box('barfront', (-5.02, 0.12, -13.9), (-4.98, 0.98, -4.1), DL, bevel=0.01))
+for yc in (0.36, 0.74):
+    pts = []
+    zz = -13.85
+    while zz < -4.15:
+        pts.append((-4.975, yc + (0.09 if len(pts) % 2 else -0.0), zz)); zz += 0.3
+    PROPS.append(tube_path('chevron', pts, 0.011, DG))
+PROPS.append(box('barband', (-4.99, 0.95, -13.9), (-4.96, 0.99, -4.1), DG))
+PROPS.append(box('barband', (-4.99, 0.12, -13.9), (-4.96, 0.16, -4.1), DG))
 PROPS.append(box('bartop', (-5.92, 1.06, -14.1), (-4.88, 1.13, -3.9), M['marble'], tile=1.0, bevel=0.012))
 PROPS.append(box('barrail', (-4.92, 0.18, -14.0), (-4.84, 0.22, -4.0), M['brass']))
 collide((-5.9, 0, -14.1), (-4.9, 1.1, -3.9), cover=True, tag='bar')
 # back bar: cabinet, shelves, mirror, bottles
 PROPS.append(box('backbar', (-8.0, 0, -13.5), (-7.4, 1.0, -4.5), M['barwood'], tile=0.9, bevel=0.01))
 PROPS.append(box('bbmirror', (-7.99, 1.3, -13.3), (-7.97, 2.6, -4.7), M['mirror']))
+PROPS += deco_stepped_frame('mframe', 'x', (-7.96, 1.95, -9.0), 8.7, 1.4, t=0.05, d=0.025, steps=2)
 for y in (1.6, 2.2):
     PROPS.append(box('shelf', (-8.0, y - 0.03, -13.5), (-7.5, y, -4.5), M['barwood'], bevel=0.005))
 for i in range(52):
@@ -213,12 +232,12 @@ for z in (-4.5, -8.5, -12.5):
     PROPS.append(lathe('tshade', [(0.09, 0.0), (0.05, 0.13), (0.045, 0.13), (0.085, 0.0)], (6.9, 0.94, z - 1.1), M['shade'], seg=16, smooth=True))
     light('POINT', (6.9, 1.01, z - 1.1), kelvin(2500), 6, radius=0.03, name='booth_lamp')
     # sconce above each booth
-    PROPS.append(lathe('bsconce', [(0, 0), (0.1, 0.0), (0.14, 0.18), (0, 0.18)], (7.9, 2.3, z - 1.1), M['shade'], seg=12))
+    PROPS += deco_fountain('bsconce', (7.94, 2.3, z - 1.1), scale=1.0, plane_ry=-90, shade=M['shade'])
     light('POINT', (7.82, 2.42, z - 1.1), kelvin(2600), 18, radius=0.05, name='booth_sconce')
 
 # ---------------------------------------------------------------- round tables with lamps and chairs (the floor)
 tbl = ph('round_wooden_table_01', (0, 0, 0), scale=0.72, target=1200)
-chair = ph('GreenChair_01', (0, 0, 0), target=700, scale=0.92)
+chair = ph('GreenChair_01', (0, 0, 0), target=500, scale=0.92)
 first = True
 for (x, z) in ((-1.5, -5.5), (1.8, -8), (-2.2, -11.5), (1.2, -13.5), (-0.5, -15.6)):
     t = dup(tbl, (x, 0, z), rnd.uniform(0, 90)); PROPS.append(t)
@@ -235,20 +254,33 @@ bpy.data.objects.remove(tbl, do_unlink=True); bpy.data.objects.remove(chair, do_
 
 # pillars with brass capitals
 for (x, z) in ((-3.2, -3.5), (3.6, -3.5), (-3.2, -16.8), (3.4, -16.8)):
-    PROPS.append(box('pillar', (x - 0.3, 0, z - 0.3), (x + 0.3, RH, z + 0.3), M['barwood'], tile=0.9, bevel=0.02))
+    PROPS.append(box('pillar', (x - 0.3, 0, z - 0.3), (x + 0.3, RH, z + 0.3), DL, bevel=0.02))
+    for k in (-0.15, 0.0, 0.15):
+        for (fx, fz) in ((x + k, z + 0.3), (x + k, z - 0.3), (x + 0.3, z + k), (x - 0.3, z + k)):
+            PROPS.append(cyl('flute', (fx, 0.14, fz), 0.022, 2.82, DG, seg=5))
+    for i, (w, y) in enumerate(((0.38, 3.06), (0.42, 3.12), (0.46, 3.18))):
+        PROPS.append(box('pcap2', (x - w, y, z - w), (x + w, y + 0.06, z + w), DG if i % 2 == 0 else DL, bevel=0.005))
     PROPS.append(box('pcap', (x - 0.34, 2.96, z - 0.34), (x + 0.34, 3.06, z + 0.34), M['brass'], bevel=0.01))
     PROPS.append(box('pbase', (x - 0.34, 0, z - 0.34), (x + 0.34, 0.14, z + 0.34), M['brass'], bevel=0.01))
     collide((x - 0.3, 0, z - 0.3), (x + 0.3, RH, z + 0.3), cover=True, tag='pillar')
 # chandeliers
-chan = ph('Chandelier_02', (0, 0, 0), scale=1.45, target=2600)
+chan = ph('Chandelier_02', (0, 0, 0), scale=1.45, target=1800)
 for (x, z) in ((-2, -6), (2.5, -10), (-1, -14)):
     c = dup(chan, (x, 0, z), rnd.uniform(0, 60)); lo, hi = bbox(c)
     c.location.z += RH - hi.z; apply_xform(c); PROPS.append(c)
     light('POINT', (x, RH - 0.85, z), kelvin(2600), 70, radius=0.25, name='chandelier')
 bpy.data.objects.remove(chan, do_unlink=True)
+for (x, s_) in ((-HW, 1), (HW, -1)):
+    for z in (-1.5, -6.5, -10.5, -14.5):
+        if x > 0 and -14.0 < z < -3.0:
+            continue
+        PROPS.append(box('pilaster', (min(x, x + s_ * 0.08), 0, z - 0.22), (max(x, x + s_ * 0.08), 3.6, z + 0.22), DL, bevel=0.01))
+        for k in (-0.12, 0.0, 0.12):
+            PROPS.append(cyl('pflute', (x + s_ * 0.09, 0.2, z + k), 0.02, 3.2, DG, seg=5))
+        PROPS.append(box('pilcap', (min(x, x + s_ * 0.12), 3.6, z - 0.28), (max(x, x + s_ * 0.12), 3.72, z + 0.28), DG, bevel=0.01))
 # wall sconces (art deco fans)
 for (x, z, s) in ((-HW, -3, 1), (-HW, -16.0, 1), (-HW, -19.5, 1), (HW, -2.5, -1), (HW, -15.6, -1)):
-    PROPS.append(lathe('sconce', [(0, 0), (0.08, 0.0), (0.16, 0.22), (0, 0.22)], (x + s * 0.1, 2.45, z), M['shade'], seg=10))
+    PROPS += deco_fountain('sconce', (x + s * 0.06, 2.42, z), scale=1.15, plane_ry=90 * s, shade=M['shade'])
     light('POINT', (x + s * 0.16, 2.6, z), kelvin(2600), 22, radius=0.06, name='sconce')
 
 # ---------------------------------------------------------------- dressing room

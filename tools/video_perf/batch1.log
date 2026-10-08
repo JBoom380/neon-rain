@@ -1,0 +1,6 @@
+done 943.5 s [('vperf', 'vela_mcu_k1_00001_.png')]
+done 1436.5 s [('vperf', 'vela_mcu_k2_00001_.png')]
+done 1175.6 s [('vperf', 'vela_smoke_s21_00001_.mp4')]
+done 2148.9 s [('vperf', 'dolores_idle_s31_00001_.mp4')]
+done 1737.4 s [('vperf', 'dolores_warm_s41_00001_.mp4')]
+done 1961.1 s [('vperf', 'dolores_guarded_s42_00001_.mp4')]

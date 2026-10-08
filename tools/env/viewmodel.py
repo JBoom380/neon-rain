@@ -1,15 +1,15 @@
-"""NEON RAIN first-person viewmodel: a 1940s 4-inch .38 swing-out revolver held in a gloved right hand (trench-coat
+"""NEON RAIN first-person viewmodel: a 1940s 1911-pattern .45 service pistol (generic, no marks) in the right hand (trench-coat
 sleeve), and a gloved left hand holding a cigarette. Procedural materials (blued steel with edge wear, walnut grip,
-dark leather glove, wool coat, paper) baked with AO into one 1k base-colour atlas. Exports assets/models/vm_revolver.glb.
+dark leather glove, wool coat, paper) baked with AO into one 1k base-colour atlas. Exports assets/models/vm_1911.glb (the .38 revolver build is kept in viewmodel_38.py.bak).
 
 Blender axes: x right, y forward (muzzle), z up. glTF export (+Y up) maps this to three: x right, -z forward, y up.
-Nodes: rig_r > revolver > crane > cylinder, revolver > muzzle; rig_r > hand_r, sleeve_r; rig_l > hand_l, sleeve_l, cig > cig_tip.
+Nodes: rig_r > pistol > slide > eject, pistol > hammer, magazine, muzzle; rig_r > casing; rig_r > hand_r, sleeve_r; rig_l > hand_l, sleeve_l, cig > cig_tip.
 Usage: blender -b --python tools/env/viewmodel.py"""
 import bpy, bmesh, math, pathlib
 from mathutils import Vector, Matrix
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-OUT = ROOT / "assets" / "models" / "vm_revolver.glb"
+OUT = ROOT / "assets" / "models" / "vm_1911.glb"
 TEXP = ROOT / "art" / "vm_atlas.png"
 RES = 1024
 BORE = 0.03  # bore axis height (z)
@@ -125,9 +125,9 @@ def steel_build(nt, b):
     wear = ramp(nt, [(0.6, (0, 0, 0, 1)), (0.72, (1, 1, 1, 1))])
     L.new(geo.outputs['Pointiness'], wear.inputs['Fac'])
     noi = n(nt, 'ShaderNodeTexNoise'); noi.inputs['Scale'].default_value = 260; noi.inputs['Detail'].default_value = 6
-    blued = n(nt, 'ShaderNodeMix', data_type='RGBA'); blued.inputs['A'].default_value = (0.06, 0.066, 0.08, 1); blued.inputs['B'].default_value = (0.11, 0.115, 0.13, 1)
+    blued = n(nt, 'ShaderNodeMix', data_type='RGBA'); blued.inputs['A'].default_value = (0.12, 0.125, 0.115, 1); blued.inputs['B'].default_value = (0.17, 0.175, 0.16, 1)
     L.new(noi.outputs['Fac'], blued.inputs['Factor'])
-    mix = n(nt, 'ShaderNodeMix', data_type='RGBA'); mix.inputs['B'].default_value = (0.17, 0.165, 0.155, 1)
+    mix = n(nt, 'ShaderNodeMix', data_type='RGBA'); mix.inputs['B'].default_value = (0.34, 0.33, 0.31, 1)
     L.new(blued.outputs['Result'], mix.inputs['A']); L.new(wear.outputs['Color'], mix.inputs['Factor'])
     L.new(mix.outputs['Result'], b.inputs['Base Color'])
 
@@ -182,67 +182,66 @@ def give(o, m):
     o.data.materials.clear(); o.data.materials.append(m)
 
 
-# ================================================================ revolver
-# cylinder: 6 chambers, 6 flutes; axis along y at (0, ?, BORE)
-CYL_R, CYL_L, CYL_Y = 0.0185, 0.040, -0.0005
-cylo = cyl("cylinder", CYL_R, CYL_R, CYL_L, 24, 'Y', (0, CYL_Y, BORE))
-for k in range(6):
-    a = math.radians(30 + 60 * k)
-    fl = cyl("flute", 0.0042, 0.0042, CYL_L * 0.62, 8, 'Y', (math.cos(a) * 0.0205, CYL_Y + 0.004, BORE + math.sin(a) * 0.0205))
-    boolean(cylo, fl)
-for k in range(6):
-    a = math.radians(60 * k)
-    ch = cyl("chamber", 0.0047, 0.0047, 0.016, 8, 'Y', (math.cos(a) * 0.0118, CYL_Y + CYL_L / 2, BORE + math.sin(a) * 0.0118))
-    boolean(cylo, ch)
-bevel(cylo, 0.0012, 2, 30); apply_mods(cylo); give(cylo, M_STEEL)
-# crane arm + ejector rod (swing out with the cylinder)
-rod = cyl("rod", 0.0024, 0.0024, 0.058, 10, 'Y', (0, CYL_Y + CYL_L / 2 + 0.029, BORE - 0.0135))
-rodtip = cyl("rodtip", 0.0034, 0.0034, 0.006, 12, 'Y', (0, CYL_Y + CYL_L / 2 + 0.057, BORE - 0.0135))
-arm = box("arm", (-0.004, CYL_Y + CYL_L / 2 - 0.002, BORE - 0.024), (0.004, CYL_Y + CYL_L / 2 + 0.004, BORE - 0.006))
-crane = join([rod, rodtip, arm], "crane_mesh"); give(crane, M_STEEL)
+# ================================================================ pistol: 1911-pattern .45 service pistol (generic, no marks)
+B = BORE
+def M_BRASS_build(nt, b):
+    L = nt.links
+    noi = n(nt, 'ShaderNodeTexNoise'); noi.inputs['Scale'].default_value = 300
+    mx = n(nt, 'ShaderNodeMix', data_type='RGBA'); mx.inputs['A'].default_value = (0.42, 0.26, 0.07, 1); mx.inputs['B'].default_value = (0.62, 0.42, 0.14, 1)
+    L.new(noi.outputs['Fac'], mx.inputs['Factor']); L.new(mx.outputs['Result'], b.inputs['Base Color'])
+M_BRASS = mat("brass", M_BRASS_build)
 
-# barrel with top rib, front sight, ejector-rod lug, bore
-BAR_Y0, BAR_L = 0.022, 0.102
-bar = cyl("barrel", 0.0088, 0.0082, BAR_L, 24, 'Y', (0, BAR_Y0 + BAR_L / 2, BORE))
-rib = box("rib", (-0.0032, BAR_Y0, BORE + 0.005), (0.0032, BAR_Y0 + BAR_L, BORE + 0.0108))
-sight = profile_x("sight", [(BAR_Y0 + BAR_L - 0.014, BORE + 0.0105), (BAR_Y0 + BAR_L - 0.002, BORE + 0.0105), (BAR_Y0 + BAR_L - 0.002, BORE + 0.0175), (BAR_Y0 + BAR_L - 0.007, BORE + 0.0172)], 0.0028)
-lug = box("lug", (-0.0035, BAR_Y0 + BAR_L - 0.016, BORE - 0.017), (0.0035, BAR_Y0 + BAR_L - 0.004, BORE - 0.004))
-barrel = join([bar, rib, sight, lug], "barrel_j")
-boolean(barrel, cyl("bore", 0.0046, 0.0046, 0.03, 16, 'Y', (0, BAR_Y0 + BAR_L, BORE)))
+# slide: taller at the front (recoil-spring tunnel), sights, rear serrations, ejection port on the right
+slide = profile_x("slide", [(-0.090, B - 0.011), (0.000, B - 0.011), (0.004, B - 0.020), (0.110, B - 0.020), (0.110, B + 0.012), (0.106, B + 0.016),
+                            (-0.086, B + 0.016), (-0.090, B + 0.012)], 0.023)
+cut = [box("ser", (sx * 0.0103 - 0.003, -0.087 + k * 0.0034, B - 0.008), (sx * 0.0103 + 0.003, -0.087 + k * 0.0034 + 0.0013, B + 0.013)) for k in range(9) for sx in (-1, 1)]
+cut.append(box("port", (0.0045, -0.024, B + 0.002), (0.03, 0.016, B + 0.03)))
+cut.append(box("tunnel", (-0.006, -0.03, B - 0.0072), (0.006, 0.12, B + 0.0072)))  # barrel channel so the barrel shows in the port
+boolean(slide, join(cut, "cutters"))
+rs = box("rsight", (-0.005, -0.086, B + 0.015), (0.005, -0.076, B + 0.0205))
+fs = profile_x("fsight", [(0.097, B + 0.015), (0.106, B + 0.015), (0.105, B + 0.0215), (0.100, B + 0.0215)], 0.003)
+plug = cyl("plug", 0.0052, 0.0052, 0.004, 16, 'Y', (0, 0.111, B - 0.0135))
+bush = cyl("bush", 0.0088, 0.0088, 0.005, 20, 'Y', (0, 0.1115, B))
+slide = join([slide, rs, fs, plug, bush], "slide_j"); bevel(slide, 0.0011, 2, 35); apply_mods(slide); give(slide, M_STEEL)
+# barrel (static, frame-mounted): crown at the muzzle, hood under the port
+barrel = cyl("barrel", 0.0072, 0.0072, 0.146, 20, 'Y', (0, 0.041, B))
+boolean(barrel, cyl("bore", 0.0058, 0.0058, 0.02, 16, 'Y', (0, 0.114, B)))
+give(barrel, M_STEEL)
 
-# frame: cylinder window with top strap, recoil shield, hammer hump, grip frame
-fr_pts = [(-0.050, BORE + 0.012), (-0.040, BORE + 0.024), (-0.026, BORE + 0.026), (0.024, BORE + 0.0255), (0.028, BORE + 0.018),
-          (0.028, BORE - 0.030), (-0.004, BORE - 0.031), (-0.030, BORE - 0.030), (-0.044, BORE - 0.036), (-0.056, BORE - 0.030), (-0.058, BORE - 0.010)]
-frame = profile_x("frame", fr_pts, 0.029)
-win = box("win", (-0.06, CYL_Y - CYL_L / 2 - 0.0008, BORE - 0.0205), (0.06, CYL_Y + CYL_L / 2 + 0.0008, BORE + 0.0205))
-boolean(frame, win)
-# sideplate line and thumb latch on the left
-latch = box("latch", (-0.0175, -0.040, BORE - 0.002), (-0.0135, -0.026, BORE + 0.006))
-pins = [cyl("pin", 0.0016, 0.0016, 0.031, 8, 'X', (0, y, z)) for y, z in ((-0.012, BORE - 0.026), (-0.040, BORE - 0.020), (-0.050, BORE + 0.004))]
-frame = join([frame] + pins + [latch], "frame_j")
-bevel(frame, 0.0014, 2, 35); apply_mods(frame)
-
-# hammer with checkered spur
-ham = profile_x("hammer", [(-0.046, BORE + 0.008), (-0.036, BORE + 0.018), (-0.040, BORE + 0.030), (-0.050, BORE + 0.037), (-0.060, BORE + 0.036),
-                           (-0.059, BORE + 0.031), (-0.050, BORE + 0.028), (-0.052, BORE + 0.010)], 0.0072)
-bevel(ham, 0.0012, 2); apply_mods(ham)
-
-# trigger guard + trigger
-guard = tube_curve("guard", [(0, 0.004, BORE - 0.030), (0, -0.002, BORE - 0.050), (0, -0.024, BORE - 0.060), (0, -0.040, BORE - 0.050), (0, -0.044, BORE - 0.034)], 0.0024, 1.3)
-trig = tube_curve("trigger", [(0, -0.016, BORE - 0.028), (0, -0.017, BORE - 0.040), (0, -0.022, BORE - 0.050), (0, -0.026, BORE - 0.053)], 0.0026, 1.6)
-metal = join([frame, barrel, ham, guard, trig], "revolver_mesh"); give(metal, M_STEEL)
-
-# walnut grip (two panels shape as one stock) with plain steel screw
-grip_pts = [(-0.044, BORE - 0.030), (-0.040, BORE - 0.060), (-0.047, BORE - 0.092), (-0.054, BORE - 0.118), (-0.066, BORE - 0.124), (-0.080, BORE - 0.118),
-            (-0.083, BORE - 0.104), (-0.076, BORE - 0.072), (-0.066, BORE - 0.040), (-0.058, BORE - 0.026)]
-grip = profile_x("grip", grip_pts, 0.033)
-bevel(grip, 0.006, 4, 30); apply_mods(grip)
-butt = profile_x("butt", [(-0.054, BORE - 0.116), (-0.066, BORE - 0.122), (-0.080, BORE - 0.116), (-0.081, BORE - 0.121), (-0.066, BORE - 0.127), (-0.053, BORE - 0.121)], 0.025)
-give(grip, M_WOOD)
-screw = cyl("screw", 0.0028, 0.0028, 0.036, 12, 'X', (0, -0.063, BORE - 0.075))
-give(butt, M_STEEL); give(screw, M_STEEL)
-revolver = join([metal, butt, screw, grip], "revolver_j")
-smooth(revolver, 35); smooth(cylo, 35); smooth(crane, 35)
+# frame: dust cover, square trigger guard, grip, beavertail grip-safety tang
+frame = profile_x("frame", [(-0.072, B - 0.011), (0.0, B - 0.011), (0.0, B - 0.020), (0.084, B - 0.020), (0.084, B - 0.028), (0.030, B - 0.028), (0.030, B - 0.047),
+                            (0.024, B - 0.053), (-0.028, B - 0.053), (-0.034, B - 0.048), (-0.050, B - 0.124), (-0.052, B - 0.130), (-0.090, B - 0.130), (-0.093, B - 0.124),
+                            (-0.078, B - 0.040), (-0.084, B - 0.024), (-0.095, B - 0.016), (-0.091, B - 0.008), (-0.080, B - 0.009)], 0.021)
+boolean(frame, box("guardwin", (-0.06, -0.024, B - 0.048), (0.06, 0.025, B - 0.029)))
+boolean(frame, box("magwell", (-0.009, -0.088, B - 0.135), (0.009, -0.054, B - 0.127)))
+bevel(frame, 0.0012, 2, 35); apply_mods(frame)
+trig = box("trigger", (-0.004, 0.003, B - 0.044), (0.004, 0.009, B - 0.029)); bevel(trig, 0.0012, 2); apply_mods(trig)
+tsafe = join([box("ts", (-0.0138, -0.080, B - 0.016), (-0.0105, -0.060, B - 0.010)), box("tsp", (-0.0145, -0.066, B - 0.013), (-0.0105, -0.056, B - 0.008))], "tsafe")
+sstop = join([box("ss", (-0.013, -0.012, B - 0.0175), (-0.0105, 0.012, B - 0.012)), cyl("ssp", 0.0022, 0.0022, 0.027, 10, 'X', (0, 0.008, B - 0.016))], "sstop")
+mrel = cyl("mrel", 0.0042, 0.0042, 0.004, 14, 'X', (-0.011, -0.030, B - 0.034))
+bpy.ops.mesh.primitive_torus_add(major_radius=0.0045, minor_radius=0.0012, major_segments=12, minor_segments=6, location=(0, -0.086, B - 0.134), rotation=(0, math.pi / 2, 0))
+lanyard = bpy.context.object; lanyard.name = "lanyard"
+metal = join([frame, barrel, trig, tsafe, sstop, mrel, lanyard], "frame_j"); give(metal, M_STEEL)
+# checkered walnut grip panels with plain screws
+panel = profile_x("panel", [(-0.037, B - 0.046), (-0.051, B - 0.117), (-0.088, B - 0.117), (-0.077, B - 0.042), (-0.071, B - 0.034), (-0.045, B - 0.034)], 0.031)
+bevel(panel, 0.003, 3, 30); apply_mods(panel); give(panel, M_WOOD)
+screws = [cyl("scr", 0.0033, 0.0033, 0.0322, 12, 'X', (0, y, z)) for y, z in ((-0.057, B - 0.047), (-0.071, B - 0.106))]
+for s_ in screws: give(s_, M_STEEL)
+pistol = join([metal, panel] + screws, "pistol_j")
+# hammer (cocked spur hammer), pivot behind the slide
+HPIV = Vector((0, -0.083, B - 0.004))
+hammer = profile_x("hammer", [(-0.080, B - 0.008), (-0.085, B + 0.004), (-0.096, B + 0.010), (-0.104, B + 0.012), (-0.103, B + 0.007), (-0.094, B + 0.002), (-0.088, B - 0.010)], 0.0065)
+bevel(hammer, 0.001, 2); apply_mods(hammer); give(hammer, M_STEEL)
+# magazine: body along the grip + base plate, a round showing at the top
+mag = profile_x("mag", [(-0.074, B - 0.036), (-0.044, B - 0.036), (-0.056, B - 0.129), (-0.088, B - 0.129)], 0.018)
+base_ = profile_x("magbase", [(-0.091, B - 0.129), (-0.054, B - 0.129), (-0.053, B - 0.134), (-0.092, B - 0.134)], 0.022)
+round_ = cyl("round", 0.0058, 0.0058, 0.022, 14, 'Y', (0, -0.058, B - 0.031))
+give(mag, M_STEEL); give(base_, M_STEEL); give(round_, M_BRASS)
+magazine = join([mag, base_, round_], "magazine_m")
+# spent casing (spawned by the game at 'eject')
+casing = cyl("casing_m", 0.006, 0.006, 0.023, 14, 'X'); give(casing, M_BRASS)
+for o in (pistol, slide, hammer, magazine, casing): smooth(o, 35)
+MAG_ORIGIN = Vector((0, -0.072, B - 0.13))
 
 
 # ================================================================ hands: real hand meshes (CharMorph MB-Lab male), posed
@@ -255,9 +254,9 @@ for nd in SKIN.node_tree.nodes:  # sample the body albedo through the original U
 M_SHIRT = mat("shirt", flat_noise_build((0.42, 0.40, 0.35, 1), (0.50, 0.48, 0.42, 1), 300, (0.6, 0.58, 0.52, 1)))
 
 import os, json
-THUMB_GUN = json.loads(os.environ.get("THUMB", "[[-40, -40], [-30, 0], [-20, 0]]"))
+THUMB_GUN = json.loads(os.environ.get("THUMB", "[[70, -35], [-100, 0], [-60, 0]]"))
 POSES = {
-    "gun": H.pose_dict(H.curl(-28, -62, -32), H.curl(-82, -96, -48), H.curl(-86, -96, -48), H.curl(-90, -94, -45), THUMB_GUN),
+    "gun": H.pose_dict(H.curl(*json.loads(os.environ.get("INDEX", "[-12, -70, -45]"))), H.curl(-82, -96, -48), H.curl(-86, -96, -48), H.curl(-90, -94, -45), THUMB_GUN),
     "cig": H.pose_dict(H.curl(-14, -16, -8, 7), H.curl(-12, -16, -8, -5), H.curl(-48, -62, -30), H.curl(-58, -66, -30), [(-6, -24), (-14, 0), (-12, 0)]),
     "cup": H.pose_dict(H.curl(-36, -42, -26), H.curl(-40, -44, -26), H.curl(-44, -46, -26), H.curl(-48, -46, -26), [(10, -10), (-12, 0), (-16, 0)]),
     "relax": H.pose_dict(H.curl(-14, -18, -10), H.curl(-17, -22, -12), H.curl(-22, -26, -14), H.curl(-27, -30, -15), [(-4, -18), (-8, 0), (-8, 0)]),
@@ -298,10 +297,10 @@ C = (hole("f_middle") + hole("f_ring") + hole("f_pinky")) / 3
 a_h = hole("f_middle") - hole("f_pinky")
 palm_c = (P["palm.02"][0] + P["palm.02"][1] + P["palm.03"][0] + P["palm.03"][1]) / 4
 p_h = palm_c - C
-gtop = Vector((0, -0.050, BORE - 0.036)); gbot = Vector((0, -0.068, BORE - 0.112))
+gtop = Vector((0, -0.057, BORE - 0.043)); gbot = Vector((0, -0.071, BORE - 0.124))
 a_g = gtop - gbot; ax = a_g.normalized(); fw = Vector((0, ax.z, -ax.y)).normalized()
 if fw.y < 0: fw = -fw
-GRIP_T, PALM_BACK, PALM_RIGHT, SHIFT = 0.52, 0.55, 0.85, 0.004
+GRIP_T, PALM_BACK, PALM_RIGHT, SHIFT = float(os.environ.get("GRIP_T", "0.36")), 0.55, 0.85, 0.004
 p_g = -fw * PALM_BACK + Vector((1, 0, 0)) * PALM_RIGHT
 c_g = gtop + (gbot - gtop) * GRIP_T + p_g.normalized() * SHIFT
 fit([hand_r, sleeve_r], a_h, p_h, C, a_g, p_g, c_g)
@@ -313,14 +312,22 @@ hand_l_relax, _ = H.make_hand('L', POSES["relax"], "hand_l_relax"); H.decimate(h
 sleeve_l = cuffs("sleeve_l")
 # cigarette through the gap between index and middle fingers at the proximal phalanx, standing out of the back of the hand
 mi = (P_i := PL["f_index.01"])[0] * 0.45 + P_i[1] * 0.55; mm = PL["f_middle.01"][0] * 0.45 + PL["f_middle.01"][1] * 0.55
-cbase = (mi + mm) / 2 + Vector((0, 0, -0.022)); cdir = Vector((0.0, 0.45, 1.0)).normalized()
-cig = cyl("cig", 0.0045, 0.0045, 0.080, 12, 'Z')
-cig.data.transform(Matrix.Translation(cbase + cdir * 0.040) @ Vector((0, 0, 1)).rotation_difference(cdir).to_matrix().to_4x4())
-ash = cyl("ash", 0.0046, 0.0044, 0.006, 12, 'Z')
-ash.data.transform(Matrix.Translation(cbase + cdir * 0.083) @ Vector((0, 0, 1)).rotation_difference(cdir).to_matrix().to_4x4())
-give(cig, M_PAPER); give(ash, M_EMBER)
-cig = join([cig, ash], "cig"); smooth(cig, 50)
-CIG_TIP = cbase + cdir * 0.088
+# cigarette: cork filter (lips end, ~25 %, slightly flattened) below the fingers on the palm side, white paper through the
+# finger gap, grey ash and an orange ember at the far end out of the back of the hand. Held near the filter end.
+cbase = (mi + mm) / 2 + Vector((0, 0, -0.034)); cdir = Vector((0.0, 0.45, 1.0)).normalized()
+def cig_seg(nm, a, b, r0, r1, m, flat=1.0):
+    o = cyl(nm, r0, r1, b - a, 12, 'Z'); o.data.transform(Matrix.Diagonal((flat, 1, 1, 1)))
+    o.data.transform(Matrix.Translation(cbase + cdir * (a + b) / 2) @ Vector((0, 0, 1)).rotation_difference(cdir).to_matrix().to_4x4()); give(o, m); return o
+def cork_build(nt, b_):
+    L_ = nt.links; noi = n(nt, 'ShaderNodeTexNoise'); noi.inputs['Scale'].default_value = 900
+    mx = n(nt, 'ShaderNodeMix', data_type='RGBA'); mx.inputs['A'].default_value = (0.42, 0.22, 0.08, 1); mx.inputs['B'].default_value = (0.60, 0.36, 0.14, 1)
+    L_.new(noi.outputs['Fac'], mx.inputs['Factor']); L_.new(mx.outputs['Result'], b_.inputs['Base Color'])
+M_CORK = mat("cork", cork_build)
+M_ASH = mat("ash", flat_noise_build((0.18, 0.17, 0.16, 1), (0.32, 0.31, 0.29, 1), 500))
+segs = [cig_seg("filter", 0.0, 0.020, 0.0044, 0.0044, M_CORK, 0.86), cig_seg("paper", 0.020, 0.074, 0.0045, 0.0045, M_PAPER),
+        cig_seg("ashc", 0.074, 0.079, 0.0045, 0.0042, M_ASH), cig_seg("emb", 0.079, 0.081, 0.0042, 0.0034, M_EMBER)]
+cig = join(segs, "cig"); smooth(cig, 50)
+CIG_TIP = cbase + cdir * 0.083  # the lit end: smoke + ember glow attach here
 def skin_build(nt, b):  # bare skin: warm base, mottling, pinker knuckles/tips (convex), darker creases (concave)
     L = nt.links
     noi = n(nt, 'ShaderNodeTexNoise'); noi.inputs['Scale'].default_value = 180; noi.inputs['Detail'].default_value = 6
@@ -340,7 +347,7 @@ for hnd in (hand_r, hand_l, hand_l_cup, hand_l_relax):  # bare hands: the real h
 
 # ================================================================ UV atlas + bake (base colour x AO)
 HANDS = [hand_r, hand_l, hand_l_cup, hand_l_relax]
-bakeables = [revolver, cylo, crane, hand_r, sleeve_r, hand_l, hand_l_cup, hand_l_relax, sleeve_l, cig]
+bakeables = [pistol, slide, hammer, magazine, casing, hand_r, sleeve_r, hand_l, hand_l_cup, hand_l_relax, sleeve_l, cig]
 for o in bakeables:
     for uv in list(o.data.uv_layers):
         if uv.name != 'skinUV': o.data.uv_layers.remove(uv)
@@ -348,11 +355,11 @@ for o in bakeables:
     if 'skinUV' in o.data.uv_layers: o.data.uv_layers['skinUV'].active_render = True
 bpy.ops.object.select_all(action='DESELECT')
 for o in bakeables: o.select_set(True)
-bpy.context.view_layer.objects.active = revolver
+bpy.context.view_layer.objects.active = pistol
 bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT')
 bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.004, scale_to_bounds=False)
 bpy.ops.object.mode_set(mode='OBJECT')
-WEIGHT = {revolver: 1.5, cylo: 1.5, crane: 1.3, hand_r: 1.25, hand_l: 1.1, hand_l_cup: 0.8, hand_l_relax: 0.8, cig: 1.0, sleeve_r: 0.35, sleeve_l: 0.3}
+WEIGHT = {pistol: 1.5, slide: 1.6, hammer: 1.2, magazine: 1.0, casing: 0.8, hand_r: 1.25, hand_l: 1.1, hand_l_cup: 0.8, hand_l_relax: 0.8, cig: 1.0, sleeve_r: 0.35, sleeve_l: 0.3}
 for o, wgt in WEIGHT.items():
     uv = o.data.uv_layers['UVMap'].data
     for d in uv: d.uv = d.uv * wgt
@@ -363,7 +370,7 @@ bpy.ops.object.mode_set(mode='OBJECT')
 
 img_c = bpy.data.images.new("vm_col", RES, RES, float_buffer=True); img_a = bpy.data.images.new("vm_ao", RES, RES, float_buffer=True)
 def target(img):
-    for m in (M_STEEL, M_WOOD, M_GLOVE, M_COAT, M_PAPER, M_EMBER, SKIN, M_SHIRT, M_SKINP):
+    for m in (M_STEEL, M_WOOD, M_GLOVE, M_COAT, M_PAPER, M_EMBER, SKIN, M_SHIRT, M_SKINP, M_BRASS, M_CORK, M_ASH):
         nt = m.node_tree; t = nt.nodes.get("BAKE") or nt.nodes.new('ShaderNodeTexImage'); t.name = "BAKE"; t.image = img
         nt.nodes.active = t
 bk = sc.render.bake; bk.margin = 6; bk.use_clear = True
@@ -387,8 +394,8 @@ def emat(name, metal, rough, emis=None):
     if emis:
         b.inputs['Emission Color'].default_value = emis; b.inputs['Emission Strength'].default_value = 3.0
     return m
-EX = {M_STEEL: emat("steel", 0.55, 0.34), M_WOOD: emat("walnut", 0.0, 0.42), M_GLOVE: emat("glove", 0.0, 0.45), M_COAT: emat("coat", 0.0, 0.9),
-      M_PAPER: emat("paper", 0.0, 0.8), SKIN: emat("skin", 0.0, 0.55), M_SKINP: emat("skin", 0.0, 0.5), M_SHIRT: emat("shirt", 0.0, 0.85), M_EMBER: emat("ember", 0.0, 0.6, (1.0, 0.28, 0.04, 1))}
+EX = {M_STEEL: emat("steel", 0.4, 0.5), M_WOOD: emat("walnut", 0.0, 0.42), M_GLOVE: emat("glove", 0.0, 0.45), M_COAT: emat("coat", 0.0, 0.9),
+      M_PAPER: emat("paper", 0.0, 0.8), SKIN: emat("skin", 0.0, 0.55), M_SKINP: emat("skin", 0.0, 0.5), M_BRASS: emat("brass", 0.85, 0.3), M_CORK: emat("cork", 0.0, 0.7), M_ASH: emat("ash", 0.0, 0.95), M_SHIRT: emat("shirt", 0.0, 0.85), M_EMBER: emat("ember", 0.0, 0.6, (1.0, 0.28, 0.04, 1))}
 for o in bakeables:
     for i, s in enumerate(o.material_slots):
         if s.material in EX: o.material_slots[i].material = EX[s.material]
@@ -400,14 +407,13 @@ def empty(name, loc, parent=None):
     return e
 
 rig_r = empty("rig_r", (0, 0, 0)); rig_l = empty("rig_l", (0, 0, 0))
-revolver.name = "revolver"; revolver.parent = rig_r
-PIV = Vector((0, 0, BORE - 0.022))  # crane hinge axis (parallel to the bore, below the cylinder)
-cr = empty("crane", PIV, revolver)
-set_origin(crane, PIV); crane.location = (0, 0, 0); crane.name = "crane_m"; crane.parent = cr
-set_origin(cylo, (0, CYL_Y, BORE)); cylo.location = Vector((0, CYL_Y, BORE)) - PIV; cylo.parent = cr
-# the cylinder node as an empty, so `cylinder` spins about its axis
-cylo.name = "cylinder_m"; cy = empty("cylinder", Vector((0, CYL_Y, BORE)) - PIV, cr); cylo.parent = cy; cylo.location = (0, 0, 0)
-empty("muzzle", (0, BAR_Y0 + BAR_L + 0.004, BORE), revolver)
+pistol.name = "pistol"; pistol.parent = rig_r
+slide.name = "slide"; slide.parent = pistol                     # moves along the bore (three +z = back)
+empty("eject", (0.013, -0.004, B + 0.011), slide)              # ejection port, right side
+hammer.name = "hammer_m"; hm = empty("hammer", HPIV, pistol); set_origin(hammer, HPIV); hammer.location = (0, 0, 0); hammer.parent = hm
+mg = empty("magazine", MAG_ORIGIN, pistol); set_origin(magazine, MAG_ORIGIN); magazine.location = (0, 0, 0); magazine.parent = mg
+empty("muzzle", (0, 0.118, B), pistol)
+casing.name = "casing"; casing.parent = rig_r; casing.location = (0, 0, -1)
 for o in (hand_r, sleeve_r): o.parent = rig_r
 for o in (hand_l, hand_l_cup, hand_l_relax, sleeve_l, cig): o.parent = rig_l
 for o in HANDS:
@@ -417,9 +423,9 @@ empty("cig_tip", CIG_TIP, cig)
 tot = {}
 for o in bakeables:
     o.data.calc_loop_triangles(); tot[o.name] = len(o.data.loop_triangles)
-print("VMTRIS", tot, "right", sum(v for k, v in tot.items() if k in ("revolver", "cylinder_m", "crane_m", "hand_r", "sleeve_r")), "left", sum(v for k, v in tot.items() if k in ("hand_l", "sleeve_l", "cig", "hand_l_cup", "hand_l_relax")))
+print("VMTRIS", tot, "right", sum(v for k, v in tot.items() if k in ("pistol", "slide", "hammer_m", "magazine_m", "casing", "hand_r", "sleeve_r")), "left", sum(v for k, v in tot.items() if k in ("hand_l", "sleeve_l", "cig", "hand_l_cup", "hand_l_relax")))
 OUT.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.export_scene.gltf(filepath=str(OUT), export_format='GLB', export_yup=True, export_apply=True, export_materials='EXPORT',
                           export_image_format='JPEG', export_jpeg_quality=90, export_extras=False, export_animations=False)
-bpy.ops.wm.save_as_mainfile(filepath=str(ROOT / "art" / "vm_revolver.blend"))
+bpy.ops.wm.save_as_mainfile(filepath=str(ROOT / "art" / "vm_1911.blend"))
 print("VMOK", OUT, OUT.stat().st_size)

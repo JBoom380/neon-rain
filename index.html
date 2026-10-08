@@ -80996,7 +80996,8 @@ window.NR = window.NR || {};
 NR.cfg = {
   EYE: 1.62, RADIUS: 0.32, WALK: 3.4, LOOK_TOUCH: 0.0062, LOOK_MOUSE: 0.0022,
   HP: 100, REGEN_DELAY: 3.2, REGEN: 14, REGEN_COVER: 34, LIVES: 3,
-  GUN_ROUNDS: 6, GUN_RATE: 0.34, GUN_RELOAD: 1.55, GUN_DMG: 34, HEAD_MULT: 2, GUN_RANGE: 60,
+  GUN_MAG: 7, GUN_ROUNDS: 8, GUN_RATE: 0.2, GUN_RELOAD: 1.3, GUN_RELOAD_EMPTY: 1.65, MAGS_START: 4, MAGS_MAX: 8, GUN_DMG: 34, // .45 pistol: 7 + 1 in the chamber
+  HEAD_MULT: 2, GUN_RANGE: 60,
   PACK_START: 6, PACK_MAX: 12, SMOKE_LIT: 12, FOCUS_TIME: 3, FOCUS_SCALE: 0.4,
   ASSIST_CONE: 0.045, ASSIST_FRICTION: 0.72,
   SETTINGS_KEY: 'neonRainFps.settings', CASE_KEY: 'neonRainFps.case',
@@ -81050,24 +81051,36 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
         vec3 col = texture2D(tCol, vUv).rgb;
         if (shaftOn > 0.5) { vec2 px = 2.0/res; float sh = texture2D(tShaft, vUv).r*0.36 + (texture2D(tShaft, vUv+vec2(px.x,px.y)).r + texture2D(tShaft, vUv+vec2(-px.x,px.y)).r + texture2D(tShaft, vUv+vec2(px.x,-px.y)).r + texture2D(tShaft, vUv-px).r)*0.16;
           col += shaftCol * sh * shaftK; }
-        if (bw < 0.5) { vec2 px = 1.0/res; vec3 hal = vec3(0.0);
+        if (bw < 0.5) { vec2 px = 1.0/res; vec3 hal = vec3(0.0), stk = vec3(0.0);
+          // halation: bright practicals bleed a warm halo
           for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398; vec2 o = vec2(cos(a), sin(a)) * px * (9.0 + 9.0 * mod(float(i), 2.0));
             vec3 c2 = texture2D(tCol, vUv + o).rgb; hal += max(c2 - 0.9, 0.0); }
-          col += hal * vec3(1.0, 0.55, 0.32) * 0.09; }
+          col += hal * vec3(1.0, 0.6, 0.35) * 0.09;
+          // anamorphic streak: a thin horizontal flare on the brightest lights, swelling now and then
+          for (int i = 1; i <= 6; i++) { float d = float(i) * float(i) * 0.0045; vec3 l1 = texture2D(tCol, vUv + vec2(d, 0.0)).rgb, l2 = texture2D(tCol, vUv - vec2(d, 0.0)).rgb;
+            stk += (max(l1 - 1.4, 0.0) + max(l2 - 1.4, 0.0)) * (1.0 - float(i) / 7.0); }
+          float swell = 0.35 + 0.65 * pow(max(0.0, sin(time * 0.31) * sin(time * 0.17 + 1.3)), 2.0);
+          col += dot(stk, vec3(0.33)) * vec3(0.35, 0.75, 1.0) * 0.06 * swell; }
         col = aces(col * expo); col = pow(col, vec3(1./2.2));
         float l = dot(col, vec3(0.299,0.587,0.114));
         float mx=max(col.r,max(col.g,col.b)), mn=min(col.r,min(col.g,col.b)); float sat=(mx-mn)/(mx+1e-4);
         float red = smoothstep(0.28,0.5,sat)*smoothstep(0.02,0.1,col.r-max(col.g,col.b))*smoothstep(0.42,0.3,col.g/(col.r+1e-3));
         red = max(red, clamp(1.0 - texture2D(tCol, vUv).a, 0.0, 1.0)); // sprites flag their painted reds through alpha
         if (bw > 0.5) { vec3 g = vec3(pow(l,1.08)); col = mix(g, col*vec3(1.1,0.9,0.9), clamp(red*1.4,0.,1.)); }
-        else { // NOIR COLOR: grey, cool shadows; warm sodium/incandescent amber, reds and neon teal-green stay saturated
+        else { // NOIR COLOR: warm amber practicals against cold teal shadows and haze; red only for lips, blood and red neon
           float hr = col.r - col.b, hg = col.g - col.r;
-          float warm = smoothstep(0.06, 0.2, hr) * smoothstep(0.22, 0.45, sat) * smoothstep(0.05, 0.22, mx);              // red..amber..orange
-          float teal = smoothstep(0.03, 0.12, hg + (col.b - col.r) * 0.5) * smoothstep(0.25, 0.45, sat) * smoothstep(0.25, 0.5, mx); // neon teal / green
-          float keep = clamp(max(max(warm, teal), red * smoothstep(0.03, 0.12, mx)), 0.0, 1.0);
-          vec3 grey = vec3(l) * mix(vec3(0.86, 0.95, 1.1), vec3(1.0, 0.98, 0.95), smoothstep(0.05, 0.6, l)); // cool shadows, neutral highlights
-          vec3 vivid = mix(vec3(l), col, 1.25);                                               // slight saturation boost on kept hues
-          col = mix(grey, vivid, keep * 0.92); col = max(col, 0.0); }
+          float strictRed = smoothstep(0.55, 0.75, sat) * smoothstep(0.12, 0.25, col.r - max(col.g, col.b)) * smoothstep(0.4, 0.28, col.g / (col.r + 1e-3)) * smoothstep(0.08, 0.2, mx);
+          red = max(strictRed, clamp(1.0 - texture2D(tCol, vUv).a, 0.0, 1.0));
+          float warm = smoothstep(0.04, 0.16, hr) * smoothstep(0.1, 0.3, sat) * smoothstep(0.16, 0.42, mx);    // lit warm areas: lamps, sconces, sodium
+          float teal = smoothstep(0.03, 0.12, hg + (col.b - col.r) * 0.5) * smoothstep(0.2, 0.4, sat) * smoothstep(0.15, 0.4, mx); // neon teal / cyan / green
+          // split tone: teal shadows and haze, warm-neutral highlights
+          vec3 split = l * mix(vec3(0.62, 0.95, 1.02), vec3(1.05, 0.98, 0.9), smoothstep(0.08, 0.55, l));
+          split += vec3(0.0, 0.016, 0.022) * (1.0 - smoothstep(0.0, 0.28, l));                                  // lifted teal haze in the blacks
+          vec3 amber = mx * vec3(1.0, 0.64, 0.3);                                                               // warm hues pulled to sodium amber
+          vec3 kept = mix(mix(amber, col, 0.35), col, red);                                                     // red stays red; other warm hues go amber
+          kept = mix(kept, mix(vec3(l), col, 1.2), teal);
+          float keep = clamp(max(max(warm * 0.85, teal), red), 0.0, 1.0);
+          col = max(mix(split, kept, keep), 0.0); }
         col = smoothstep(vec3(0.035), vec3(1.0), col); // deep blacks
         // scan: amber wash + scanlines
         col = mix(col, col*vec3(1.25,0.95,0.55) + vec3(0.03,0.02,0.0), scan*0.6);
@@ -81141,6 +81154,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     setState(s) { const prev = core.state; if (prev === s) return; core.state = s; NR.bus.emit('state', { state: s, prev }); },
     setScene(scene, shaft) {
       core.scene = scene; core.shaft = shaft || null; scene.add(camera); renderer.shadowMap.needsUpdate = true;
+      try { renderer.compile(scene, camera); if (core.vm) renderer.compile(core.vm.scene, camera); } catch (e) {} // compile all programs now (boot / behind the black cards), not on first draw
       if (shaft) { const u = shaftMat.uniforms; u.cookie.value = shaft.cookie; u.lightVP.value = shaft.lightVP; u.lightPos.value = shaft.pos; u.maxD.value = shaft.maxD || 9; u.yTop.value = shaft.yTop || 2.9; u.zMin.value = shaft.zMin == null ? -1e3 : shaft.zMin;
         post.uniforms.shaftCol.value.set(shaft.color || 0xd8ebff); post.uniforms.shaftK.value = shaft.k || 0.16; }
       post.uniforms.expo.value = scene.userData.expo || 1.15;
@@ -81176,7 +81190,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     if (core.shaft && core.shaft.on !== false) { shaftMat.uniforms.time.value = core.time; quad.material = shaftMat; renderer.setRenderTarget(srt); renderer.render(pScene, pCam); post.uniforms.shaftOn.value = 1; }
     else post.uniforms.shaftOn.value = 0;
     camera.rotation.x -= sy; camera.rotation.y -= sx;
-    const u = post.uniforms; u.time.value = core.time; u.bw.value = settings.bw ? 1 : 0;
+    const u = post.uniforms; u.time.value = core.time; u.bw.value = settings.film === 'bwred' ? 1 : 0; // only the FILM setting picks B&W RED
     u.hurt.value = core.fx.hurt; u.scan.value = core.fx.scan; u.focus.value = core.fx.focus; u.fade.value = core.fx.fade;
     if (flashT > 0) { flashT -= rdt; u.flash.value.set(flashC.r, flashC.g, flashC.b, Math.max(0, flashT / flashMax) * flashA); } else u.flash.value.w = 0;
     quad.material = post; renderer.setRenderTarget(null); renderer.render(pScene, pCam);
@@ -81607,7 +81621,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const T = THREE, V3 = (x, y, z) => new T.Vector3(x, y, z);
   const U = { time: { value: 0 } };
   const DPR = () => Math.min(devicePixelRatio || 1, 2);
-  const BLOOD = { human: 0x6e0505, artificial: 0xe4e0d0 };
+  const BLOOD = { human: 0x4c0303, artificial: 0xe4e0d0 }; // dark arterial red (the noir grade lifts reds; keep the base deep)
 
   function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; return t; }
 
@@ -81685,16 +81699,17 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // ---------------------------------------------------------------- per-level dynamic fx: decals, spray, tracers, flash light
   const splatTex = canvasTex(128, 128, (g, w, h) => {
-    g.clearRect(0, 0, w, h); g.fillStyle = '#fff';
+    g.clearRect(0, 0, w, h); g.fillStyle = '#fff'; g.filter = 'blur(1.5px)';
     g.beginPath(); g.arc(64, 64, 22, 0, 7); g.fill();
     for (let i = 0; i < 22; i++) { const a = Math.random() * 6.28, d = 18 + Math.random() * 38, r = 2 + Math.random() * 8; g.beginPath(); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, r * (1 - d / 70), 0, 7); g.fill(); }
     for (let i = 0; i < 6; i++) { const a = Math.random() * 6.28; g.lineWidth = 3 + Math.random() * 4; g.strokeStyle = '#fff'; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + Math.cos(a) * 50, 64 + Math.sin(a) * 50); g.stroke(); }
   });
-  const poolTex = canvasTex(128, 128, (g) => { g.fillStyle = '#fff'; g.beginPath(); for (let i = 0; i < 7; i++) { const a = Math.random() * 6.28, d = Math.random() * 18; g.moveTo(64 + Math.cos(a) * d + 30, 64 + Math.sin(a) * d); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 26 + Math.random() * 12, 0, 7); } g.fill(); });
+  const poolTex = canvasTex(128, 128, (g) => { g.fillStyle = '#fff'; g.filter = 'blur(3px)'; g.beginPath(); for (let i = 0; i < 7; i++) { const a = Math.random() * 6.28, d = Math.random() * 18; g.moveTo(64 + Math.cos(a) * d + 30, 64 + Math.sin(a) * d); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 26 + Math.random() * 12, 0, 7); } g.fill(); });
   let L = null, decals = {}, pools = {}, spray = null, tracers = [], flashLight = null, wounds = [];
   const MAXD = 72, MAXP = 24, MAXS = 220;
   function decalMesh(tex, color, n, lit) {
-    const m = new T.InstancedMesh(new T.PlaneGeometry(1, 1), new T.MeshLambertMaterial({ color, map: tex, transparent: true, depthWrite: false, alphaTest: 0.35, polygonOffset: true, polygonOffsetFactor: -4, emissive: lit ? color : 0, emissiveIntensity: lit ? 0.12 : 0 }), n);
+    // wet blood: dark, glossy, soft-edged (lit by the scene, never flat)
+    const m = new T.InstancedMesh(new T.PlaneGeometry(1, 1), new T.MeshStandardMaterial({ color, map: tex, transparent: true, depthWrite: false, alphaTest: 0.04, roughness: lit ? 0.6 : 0.18, metalness: 0, polygonOffset: true, polygonOffsetFactor: -4, emissive: lit ? color : 0, emissiveIntensity: lit ? 0.12 : 0 }), n);
     m.count = 0; m.frustumCulled = false; m.renderOrder = 2; m.userData.next = 0; m.userData.grow = []; return m;
   }
   function attach(level) {
@@ -81702,13 +81717,13 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     if (!level.fxReady) {
       level.fx = {
         decals: { human: decalMesh(splatTex, BLOOD.human, MAXD), artificial: decalMesh(splatTex, BLOOD.artificial, MAXD, true) },
-        pools: { human: decalMesh(poolTex, 0x4a0303, MAXP), artificial: decalMesh(poolTex, 0xd8d4c4, MAXP, true) },
+        pools: { human: decalMesh(poolTex, 0x2a0202, MAXP), artificial: decalMesh(poolTex, 0xd8d4c4, MAXP, true) },
       };
       for (const k in level.fx.decals) S.add(level.fx.decals[k]); for (const k in level.fx.pools) S.add(level.fx.pools[k]);
       // spray particles
       const geo = new T.BufferGeometry(); const pos = new Float32Array(MAXS * 3), col = new Float32Array(MAXS * 3);
       geo.setAttribute('position', new T.BufferAttribute(pos, 3)); geo.setAttribute('color', new T.BufferAttribute(col, 3));
-      const pm = new T.PointsMaterial({ size: 0.05, vertexColors: true, sizeAttenuation: true, transparent: true, depthWrite: false });
+      const pm = new T.PointsMaterial({ size: 0.045, vertexColors: true, sizeAttenuation: true, transparent: true, depthWrite: false, map: NR.world && NR.world.glowTex, alphaTest: 0.03 }); // soft round droplets
       const pts = new T.Points(geo, pm); pts.frustumCulled = false; S.add(pts);
       level.fx.spray = { pts, pos, col, vel: new Float32Array(MAXS * 3), life: new Float32Array(MAXS), next: 0 };
       // tracers
@@ -81798,7 +81813,9 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const T = THREE;
   const TA = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array, 5121: Uint8Array, 5122: Int16Array, 5120: Int8Array };
   const NC = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
-  async function load(url) {
+  let pending = 0;
+  function load(url) { pending++; return load0(url).finally(() => { pending--; }); }
+  async function load0(url) {
     const buf = await (await fetch(url)).arrayBuffer();
     const dv = new DataView(buf); let off = 12, json = null, bin = null;
     while (off < buf.byteLength) { const len = dv.getUint32(off, true), type = dv.getUint32(off + 4, true); const chunk = buf.slice(off + 8, off + 8 + len); if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(chunk)); else bin = chunk; off += 8 + len; }
@@ -81855,7 +81872,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     });
     return { scene: root, animations: clips, materials: mats, extras: json.scenes[json.scene || 0].extras || {} };
   }
-  NR.gltf = { load };
+  NR.gltf = { load, get pending() { return pending; } };
 })();
 
 </script>
@@ -81871,19 +81888,43 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const clean = (n) => T.PropertyBinding.sanitizeNodeName(n || '');
   const LOWER = new Set(['spine', 'thigh_L', 'shin_L', 'foot_L', 'toe_L', 'thigh_R', 'shin_R', 'foot_R', 'toe_R']);
 
-  // noir character shading: a faint amber rim keeps silhouettes off the black, and deep reds (ties, blood) keep colour
-  // through the B&W grade (alpha < 1 marks them for the post pass, as on Vela)
+  // noir character shading: a two-tone neon rim (teal from screen-right, red-magenta from screen-left) cuts the silhouettes
+  // out of the dark without flattening the key light and shadows; deep reds (ties, blood) keep colour through the grade
+  // (alpha < 1 marks them for the post pass, as on Vela)
   function charMaterial(m) {
     m.side = T.DoubleSide; m.shadowSide = T.BackSide; // cloth shells are open (hems, cuffs, coat skirts): show their insides too; back faces cast (no acne)
     m.onBeforeCompile = (sh) => {
-      sh.uniforms.uRim = { value: new T.Color(0xffa24a).multiplyScalar(0.16) };
-      sh.fragmentShader = 'uniform vec3 uRim;\n' + sh.fragmentShader.replace('#include <opaque_fragment>',
-        'outgoingLight += uRim * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);\n#include <opaque_fragment>\n' +
+      sh.uniforms.uRimA = { value: new T.Color(0x38d6ff).multiplyScalar(0.26) };
+      sh.uniforms.uRimB = { value: new T.Color(0xff2a5a).multiplyScalar(0.22) };
+      // matte, never blown out: cap albedo luminance (white shirts and the ivory suit stay cloth under the work lights)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n float lumA = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)); diffuseColor.rgb *= min(1.0, 0.55 / max(lumA, 1e-4));\n#ifdef USE_ROUGHNESSMAP\n float skinM = 1.0 - smoothstep(0.02, 0.045, abs(texture2D(roughnessMap, vRoughnessMapUv).r - 0.45)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15))) * vec3(1.02, 0.97, 0.95), 0.35 * skinM);\n#endif')
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n#ifdef USE_ROUGHNESSMAP\n float specK = texture2D(roughnessMap, vRoughnessMapUv).r; reflectedLight.directSpecular *= specK; reflectedLight.indirectSpecular *= specK;\n float skinK = 1.0 - smoothstep(0.02, 0.045, abs(specK - 0.45));\n reflectedLight.directSpecular *= 1.0 - 0.75 * skinK;\n reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, reflectedLight.directDiffuse * vec3(1.06, 0.94, 0.9), skinK);\n reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.30, 0.07, 0.05) * skinK * 0.6;\n#endif');
+      sh.fragmentShader = 'uniform vec3 uRimA, uRimB;\n' + sh.fragmentShader.replace('#include <opaque_fragment>',
+        'float nv = 1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0); float rimk = nv * nv * nv;\n' +
+        'outgoingLight += mix(uRimB, uRimA, smoothstep(-0.35, 0.35, normal.x)) * rimk * (1.0 - 0.85 * smoothstep(0.25, 0.85, normal.y));\n' +
+        'float pk = max(max(outgoingLight.r, outgoingLight.g), outgoingLight.b); float pkk = pk < 0.3 ? pk : 0.3 + (pk - 0.3) / (1.0 + (pk - 0.3) / 0.5); outgoingLight *= pkk / max(pk, 1e-4);\n#include <opaque_fragment>\n' + // soft shoulder: hot work lights never blow skin and cloth out
         ' float rq = diffuseColor.r / max(0.004, max(diffuseColor.g, diffuseColor.b)); gl_FragColor.a = 1.0 - smoothstep(4.0, 7.0, rq) * smoothstep(0.02, 0.05, diffuseColor.r) * 0.95;');
     };
-    m.customProgramCacheKey = () => 'nrCast'; m.needsUpdate = true;
+    m.customProgramCacheKey = () => 'nrCast6'; m.needsUpdate = true;
   }
 
+  // alpha hair cards: alpha-tested strands tinted per character, with a Kajiya-style anisotropic highlight running across
+  // the strands (strand direction from screen-space derivatives of the card UVs)
+  function hairCards(m, tint) {
+    m.alphaTest = 0.4; m.transparent = false; m.depthWrite = true; m.side = T.DoubleSide; m.metalness = 0; m.roughness = 0.5;
+    m.color.setRGB(Math.min(1, tint[0] * 1.6), Math.min(1, tint[1] * 1.6), Math.min(1, tint[2] * 1.6), T.LinearSRGBColorSpace);
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+        vec3 dp1 = dFdx(-vViewPosition), dp2 = dFdy(-vViewPosition); vec2 du1 = dFdx(vMapUv), du2 = dFdy(vMapUv);
+        vec3 Ts = normalize(dp1 * du2.y - dp2 * du1.y + 1e-6);
+        vec3 Vv = normalize(vViewPosition); vec3 Lk = normalize(vec3(-0.35, 0.75, 0.55));
+        vec3 Hh = normalize(Lk + Vv); float th = dot(Ts, Hh); float aniso = pow(sqrt(max(0.0, 1.0 - th * th)), 70.0);
+        float th2 = dot(Ts, normalize(vec3(0.5, 0.3, 0.6) + Vv)); float aniso2 = pow(sqrt(max(0.0, 1.0 - th2 * th2)), 24.0);
+        outgoingLight += diffuseColor.rgb * (aniso * 0.22 + aniso2 * 0.08);
+        #include <opaque_fragment>`);
+    };
+    m.customProgramCacheKey = () => 'nrHair'; m.needsUpdate = true;
+  }
   async function template(url) {
     const buf = await (await fetch(url)).arrayBuffer();
     const dv = new DataView(buf); let off = 12, json = null, bin = null;
@@ -81895,9 +81936,12 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const tex = (info, srgb) => { if (!info) return null; const src = json.textures[info.index].source, k = src + (srgb ? 's' : 'l'); if (!texCache[k]) { const t = new T.Texture(images[src]); t.flipY = false; t.colorSpace = srgb ? T.SRGBColorSpace : T.NoColorSpace; t.anisotropy = 4; t.needsUpdate = true; texCache[k] = t; } return texCache[k]; };
     const mats = (json.materials || []).map(md => {
       const pb = md.pbrMetallicRoughness || {}, f = pb.baseColorFactor || [1, 1, 1, 1];
-      const m = new T.MeshStandardMaterial({ name: md.name, color: new T.Color().setRGB(f[0], f[1], f[2], T.LinearSRGBColorSpace),
-        metalness: pb.metallicFactor == null ? 1 : pb.metallicFactor, roughness: pb.roughnessFactor == null ? 1 : pb.roughnessFactor, map: tex(pb.baseColorTexture, true) });
+      // PBR with a baked specular-intensity map (R of the roughness/metal texture): cloth stays matte, skin, satin,
+      // leather and gun metal catch the light
+      const m = new T.MeshStandardMaterial({ name: md.name, color: new T.Color().setRGB(f[0], f[1], f[2], T.LinearSRGBColorSpace), map: tex(pb.baseColorTexture, true),
+        roughness: pb.roughnessFactor == null ? 1 : pb.roughnessFactor, metalness: pb.metallicFactor == null ? 1 : pb.metallicFactor });
       if (pb.metallicRoughnessTexture) { m.roughnessMap = m.metalnessMap = tex(pb.metallicRoughnessTexture, false); }
+      if (md.extras && md.extras.cards) { hairCards(m, md.extras.tint || [0.4, 0.3, 0.2]); return m; }
       if (md.normalTexture) { m.normalMap = tex(md.normalTexture, false); const s = md.normalTexture.scale || 1; m.normalScale.set(s, -s); }
       charMaterial(m);
       return m;
@@ -81973,13 +82017,15 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const tplCache = {};
   function family(url) { if (!tplCache[url]) { tplCache[url] = template(url); tplCache[url].then(t => { tplCache[url].done = t; }, e => { console.warn('[cast] ' + url + ' failed', e); }); } return tplCache[url]; }
 
-  const URL = { thugs: 'models/cast/thugs.glb', gale: 'models/cast/gale.glb', synth: 'models/cast/synth.glb', miles: 'models/cast/miles.glb' };
-  const FAMILY = { thug_a: 'thugs', thug_b: 'thugs', thug_c: 'thugs', gale_a: 'gale', gale_b: 'gale', gale_c: 'gale', synth: 'synth', miles: 'miles' };
+  const URL = { thugs: 'models/cast/thugs.glb', gale: 'models/cast/gale.glb', synth: 'models/cast/synth.glb', miles: 'models/cast/miles.glb',
+    kastor: 'models/cast/kastor.glb', dane: 'models/cast/dane.glb', vela: 'models/cast/vela.glb', dolores: 'models/cast/dolores.glb', harrow: 'models/cast/harrow.glb' };
+  const FAMILY = { thug_a: 'thugs', thug_b: 'thugs', thug_c: 'thugs', gale_a: 'gale', gale_b: 'gale', gale_c: 'gale', synth: 'synth', miles: 'miles',
+    kastor: 'kastor', dane: 'dane', vela: 'vela', dolores: 'dolores', harrow: 'harrow' };
   const VARIANTS = Object.keys(FAMILY);
-  function preload(fams) { for (const f of fams || Object.keys(URL)) family(NR.ASSET + URL[f]); }
+  function preload(fams) { for (const f of fams || ['thugs', 'gale', 'synth', 'miles']) family(NR.ASSET + URL[f]); }
   function ready(variant) { const p = tplCache[NR.ASSET + URL[FAMILY[variant]]]; return p && p.done ? p.done : null; }
 
-  const WEAPONS = ['pistol', 'tommy', 'knife', 'flashlight'];
+  const WEAPONS = ['pistol', 'revolver', 'tommy', 'knife', 'flashlight'];
   class Rig {
     constructor(tpl, variant) {
       this.variant = variant; this.tpl = tpl;
@@ -81989,7 +82035,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       this.lod0 = this.nodes[variant]; this.lod1 = this.nodes[variant + '_lod1']; if (this.lod1) this.lod1.visible = false;
       this.weapons = WEAPONS.filter(w => this.nodes[variant + '_' + w]);
       const main = this.weapons.find(w => w !== 'flashlight') || null;
-      this.kind = main === 'knife' ? (this.weapons.includes('flashlight') ? 'knife_lamp' : 'knife') : main || 'none';
+      this.kind = main === 'knife' ? (this.weapons.includes('flashlight') ? 'knife_lamp' : 'knife') : main === 'revolver' ? 'pistol' : main || 'none';
       this.muzzle = main ? this.nodes[variant + '_' + main + '_muzzle'] : null;
       this.lampTip = this.nodes[variant + '_flashlight_muzzle'] || null;
       this.hat = this.nodes[variant + '_hat'] || null;
@@ -82000,6 +82046,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       this.speedOf = (n) => ((tpl.meta.anims[n] || {}).speed) || 1;
       this.play('L', 'idle', 0); this.play('U', 'idle', 0);
       this.mixer.update(Math.random() * 3);
+      this.root.updateMatrixWorld(true); const r0 = this.root.getWorldPosition(new T.Vector3());
+      this.ankle0 = Math.min(this.nodes.foot_L.getWorldPosition(new T.Vector3()).y, this.nodes.foot_R.getWorldPosition(new T.Vector3()).y) - r0.y;
     }
     has(n) { return !!this.tpl.sub[n]; }
     action(n, part) {
@@ -82028,6 +82076,49 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       bone.quaternion.copy(pw.invert().multiply(q)); bone.updateMatrixWorld(true);
     }
     lod(far) { if (!this.lod1) return; this.lod0.visible = !far; this.lod1.visible = far; }
+    // ---- foot locking: a foot that touches down is pinned to its world spot until it lifts (two-bone leg IK keeps the
+    // knee bending toward where it already points; the foot keeps its animated orientation)
+    rotateTo(bone, from, to) {
+      if (from.lengthSq() < 1e-10 || to.lengthSq() < 1e-10) return;
+      const q = new T.Quaternion().setFromUnitVectors(from.normalize(), to.normalize());
+      const bw = bone.getWorldQuaternion(new T.Quaternion()), pw = bone.parent.getWorldQuaternion(new T.Quaternion());
+      bone.quaternion.copy(pw.invert().multiply(q.multiply(bw))); bone.updateMatrixWorld(true);
+    }
+    legIK(s, Tgt) {
+      const th = this.nodes['thigh_' + s], sh = this.nodes['shin_' + s], ft = this.nodes['foot_' + s];
+      const H = th.getWorldPosition(new T.Vector3()), K = sh.getWorldPosition(new T.Vector3()), A = ft.getWorldPosition(new T.Vector3());
+      const fq = ft.getWorldQuaternion(new T.Quaternion());
+      const a = H.distanceTo(K), b = K.distanceTo(A);
+      const dv = Tgt.clone().sub(H); let d = dv.length(); if (d < 1e-5) return; dv.divideScalar(d);
+      d = Math.min(Math.max(d, Math.abs(a - b) + 1e-3), a + b - 1e-3);
+      const pole = K.clone().sub(H); pole.addScaledVector(dv, -pole.dot(dv)); if (pole.lengthSq() < 1e-8) pole.set(0, 0, 1); pole.normalize();
+      const ca = (a * a + d * d - b * b) / (2 * a * d), sa = Math.sqrt(Math.max(0, 1 - ca * ca));
+      const K2 = H.clone().addScaledVector(dv, a * ca).addScaledVector(pole, a * sa);
+      this.rotateTo(th, K.clone().sub(H), K2.clone().sub(H));
+      const A1 = ft.getWorldPosition(new T.Vector3()), K1 = sh.getWorldPosition(new T.Vector3());
+      this.rotateTo(sh, A1.sub(K1), H.clone().addScaledVector(dv, d).sub(K1));
+      const sw = sh.getWorldQuaternion(new T.Quaternion()); ft.quaternion.copy(sw.invert().multiply(fq)); ft.updateMatrixWorld(true);
+    }
+    footLock(dt, on, groundY, release = 0.28) {
+      if (this.ankle0 == null) return;
+      this.fl = this.fl || { L: { lock: null, w: 0 }, R: { lock: null, w: 0 } };
+      if (this.flClip !== this.layerName.L) { this.flClip = this.layerName.L; this.fl.L.h = []; this.fl.R.h = []; } // new gait, new contact heights
+      for (const s of ['L', 'R']) {
+        const st = this.fl[s], A = this.nodes['foot_' + s].getWorldPosition(new T.Vector3());
+        // contact height = this foot's lowest point over the last stride (mocap feet land at different heights)
+        this.t_ = (this.t_ || 0) + (s === 'L' ? dt : 0);
+        st.h = st.h || []; st.h.push([this.t_, A.y]); while (st.h.length && st.h[0][0] < this.t_ - 0.8) st.h.shift();
+        st.lo = Math.min(...st.h.map(q => q[1]));
+        const vy = st.py == null ? 0 : (A.y - st.py) / Math.max(dt, 1e-3); st.py = A.y;
+        const down = on && A.y < st.lo + 0.022 && (st.lock || Math.abs(vy) < 0.5);
+        if (down && !st.lock) { st.lock = A.clone(); st.w = 1; }               // pin at once: zero offset at touch-down
+        if ((!down || Math.hypot(st.lock.x - A.x, st.lock.z - A.z) > release) && st.lock) { st.out = st.lock; st.lock = null; }
+        if (!st.lock) st.w = Math.max(0, st.w - dt * 12);                       // ease the leg back to the clip as it lifts
+        const tgt = st.lock || st.out; if (!tgt || st.w < 0.01) continue;
+        const Tg = A.clone(); Tg.x += (tgt.x - A.x) * st.w; Tg.z += (tgt.z - A.z) * st.w;
+        this.legIK(s, Tg); 
+      }
+    }
     update(dt) { this.mixer.update(dt); this.root.updateMatrixWorld(true); }
   }
 
@@ -82056,6 +82147,12 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   }
   NR.env = { ready, files: FILES, exposure: 1.0 };
 
+  // baked highlights are soft-clipped near 1.3 so the grade's halation sees a glow, not a hot texel it smears into streaks
+  function clampHi(mat) {
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (s, r) => { if (prev) prev(s, r); s.fragmentShader = s.fragmentShader.replace('#include <opaque_fragment>', '{ vec3 kk = max(outgoingLight - vec3(0.8), vec3(0.0)); outgoingLight = min(outgoingLight, vec3(0.8)) + kk / (1.0 + kk / 0.6); }\n#include <opaque_fragment>'); };
+    mat.customProgramCacheKey = () => 'clampHi' + (prev ? 'w' : '');
+  }
   // GLB materials -> phone materials (unlit, baked)
   function phoneMats(root, opts) {
     const neon = [];
@@ -82080,6 +82177,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       } else if (/^MIRROR|^WET/.test(m.name)) {
         n = m; n.userData.keep = true;
       }
+      if (n && (x.lm != null || x.baked != null)) clampHi(n);
       if (n) { n.name = m.name; o.material = n; m.dispose(); }
       if (n && m.map && n.map) { n.map.anisotropy = 8; }
     });
@@ -82124,7 +82222,14 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
         while (x < w) {
           const bw = 40 + rnd() * 110, bh = base + rnd() * h * 0.25; const top = h - bh;
           g.fillStyle = `rgb(${dark + 6},${dark + 2},${dark})`; g.fillRect(x, top, bw, bh);
-          if (rnd() < 0.4) { g.fillRect(x + bw * 0.4, top - 18 - rnd() * 30, 4, 40); }
+          const fin = rnd();
+          if (fin < 0.45) { // ziggurat finial: stepped tiers, a spire, a warm aviation lamp
+            let tw = bw * 0.8, ty = top; const cxb = x + bw / 2, steps = 3 + (rnd() * 3 | 0);
+            for (let k = 0; k < steps; k++) { tw *= 0.72; ty -= 8 + rnd() * 6; g.fillRect(cxb - tw / 2, ty, tw, top - ty + 1); }
+            g.fillRect(cxb - 1.5, ty - 22 - rnd() * 20, 3, 26); g.fillStyle = 'rgba(255,90,40,0.9)'; g.fillRect(cxb - 2, ty - 26, 4, 4);
+            if (layer === 2) { g.strokeStyle = 'rgba(255,170,80,0.35)'; g.lineWidth = 1; for (let k = 0; k < 5; k++) { g.beginPath(); g.moveTo(cxb, ty); g.lineTo(cxb + (k - 2) * tw * 0.4, top); g.stroke(); } }
+            g.fillStyle = `rgb(${dark + 6},${dark + 2},${dark})`;
+          } else if (fin < 0.6) { g.fillRect(x + bw * 0.4, top - 18 - rnd() * 30, 4, 40); }
           for (let yy = top + 8; yy < h - 6; yy += 13 - layer * 2) for (let xx = x + 5; xx < x + bw - 6; xx += 10 - layer * 2) {
             if (rnd() < 0.2 + layer * 0.08) { const a = (0.25 + rnd() * 0.6) * (0.5 + layer * 0.25); const warm = rnd() < 0.85;
               g.fillStyle = warm ? `rgba(255,${120 + rnd() * 60 | 0},${30 + rnd() * 30 | 0},${a})` : `rgba(255,${190 + rnd() * 40 | 0},${120 + rnd() * 40 | 0},${a * 0.7})`;
@@ -82150,10 +82255,102 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   }
   NR.env.cityTex = cityTex; NR.env.tubeSign = tubeSign;
 
+  // ---------------------------------------------------------------- haze + light beams (cheap volumetrics for the phone)
+  const HZ = { time: { value: 0 } };
+  const NOISE = `float hz3(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+    float vn(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
+      return mix(mix(mix(hz3(i), hz3(i+vec3(1,0,0)), f.x), mix(hz3(i+vec3(0,1,0)), hz3(i+vec3(1,1,0)), f.x), f.y),
+                 mix(mix(hz3(i+vec3(0,0,1)), hz3(i+vec3(1,0,1)), f.x), mix(hz3(i+vec3(0,1,1)), hz3(i+vec3(1,1,1)), f.x), f.y), f.z); }`;
+  // a light cone in the haze: soft edges (view-angle falloff), fades along its length, slow drifting density
+  function beam(parent, a, b, r0, r1, color, alpha) {
+    const len = a.distanceTo(b);
+    const geo = new T.CylinderGeometry(r0, r1, len, 20, 6, true); geo.translate(0, -len / 2, 0);
+    const mat = new T.ShaderMaterial({ transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide,
+      uniforms: { color: { value: new T.Color(color) }, alpha: { value: alpha }, len: { value: len }, time: HZ.time },
+      vertexShader: `uniform float len; varying float vT; varying vec3 vN, vW; void main(){ vT = -position.y / len; vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz;
+        vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform vec3 color; uniform float alpha, time; varying float vT; varying vec3 vN, vW; ${NOISE}
+        void main(){ vec3 v = normalize(cameraPosition - vW); float rim = pow(abs(dot(normalize(vN), v)), 2.2);
+          float fall = pow(1.0 - vT, 1.6) * smoothstep(0.0, 0.06, vT); float n = 0.55 + 0.45 * vn(vW * 1.3 + vec3(0.0, -time * 0.12, time * 0.05));
+          gl_FragColor = vec4(color * alpha * rim * fall * n, 1.0); }` });
+    const m = new T.Mesh(geo, mat); m.position.copy(a); m.quaternion.setFromUnitVectors(V3(0, -1, 0), b.clone().sub(a).normalize()); m.renderOrder = 6; m.frustumCulled = false;
+    parent.add(m); return m;
+  }
+  function aimBeam(m, a, b) { m.position.copy(a); m.quaternion.setFromUnitVectors(V3(0, -1, 0), b.clone().sub(a).normalize()); }
+  // a slab of lit haze (camera-facing about Y): drifting noise, soft box edges; gives the air a body behind doorways and over streets
+  function hazeSlab(parent, pos, w, h, color, alpha) {
+    const mat = new T.ShaderMaterial({ transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide,
+      uniforms: { color: { value: new T.Color(color) }, alpha: { value: alpha }, time: HZ.time },
+      vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+      fragmentShader: `uniform vec3 color; uniform float alpha, time; varying vec2 vUv; varying vec3 vW; ${NOISE}
+        void main(){ vec2 e = smoothstep(vec2(0.0), vec2(0.3), vUv) * smoothstep(vec2(0.0), vec2(0.3), 1.0 - vUv);
+          float n = 0.45 + 0.55 * vn(vW * 0.7 + vec3(time * 0.06, -time * 0.03, 0.0));
+          gl_FragColor = vec4(color * alpha * e.x * e.y * n, 1.0); }` });
+    const m = new T.Mesh(new T.PlaneGeometry(w, h), mat); m.position.copy(pos); m.renderOrder = 4; parent.add(m);
+    m.onBeforeRender = (r, s, cam) => { m.rotation.y = Math.atan2(cam.position.x - m.position.x, cam.position.z - m.position.z); };
+    return m;
+  }
+  // CRT / video screen: scanlines, slight RGB fringing, curvature, flicker; `draw` paints the picture once
+  function crtScreen(w, h, draw, tint) {
+    const tex = W.tex(256, 192, draw);
+    const mat = new T.ShaderMaterial({ uniforms: { map: { value: tex }, time: HZ.time, tint: { value: new T.Color(tint || 0x9fe8ff) } }, fog: false,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+      fragmentShader: `uniform sampler2D map; uniform float time; uniform vec3 tint; varying vec2 vUv;
+        float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+        void main(){ vec2 uv = vUv - 0.5; uv *= 1.0 + dot(uv, uv) * 0.18; uv += 0.5;
+          if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+          float roll = fract(time * 0.12); float band = smoothstep(0.06, 0.0, abs(uv.y - roll)) * 0.25;
+          uv.x += (h(vec2(floor(uv.y * 90.0), floor(time * 14.0))) - 0.5) * 0.004 + band * 0.01;
+          vec3 c = vec3(texture2D(map, uv + vec2(0.003, 0.0)).r, texture2D(map, uv).g, texture2D(map, uv - vec2(0.003, 0.0)).b);
+          float scan = 0.72 + 0.28 * sin(uv.y * 3.14159 * 150.0); float vig = smoothstep(0.75, 0.25, length(vUv - 0.5));
+          float fl = 0.93 + 0.07 * sin(time * 47.0); c = (c * tint * 1.4 + band * tint * 0.4 + h(uv * 300.0 + time) * 0.05) * scan * vig * fl;
+          gl_FragColor = vec4(c * 0.85, 1.0); }` });
+    return new T.Mesh(new T.PlaneGeometry(w, h), mat);
+  }
+  // a translucent hologram advert: invented glyphs and a cocktail glass, pink and cyan, banded and glitching
+  function hologram(w, h) {
+    const tex = W.tex(512, 1024, (g, W_, H_) => {
+      g.clearRect(0, 0, W_, H_); g.lineCap = 'round'; g.lineJoin = 'round';
+      const rnd = NR.rng(808);
+      g.strokeStyle = '#ff4ab8'; g.lineWidth = 14; g.shadowColor = '#ff4ab8'; g.shadowBlur = 30;
+      g.beginPath(); g.moveTo(96, 220); g.lineTo(416, 220); g.lineTo(256, 470); g.closePath(); g.stroke();
+      g.beginPath(); g.moveTo(256, 470); g.lineTo(256, 640); g.moveTo(170, 650); g.lineTo(342, 650); g.stroke();
+      g.fillStyle = 'rgba(255,90,190,0.35)'; g.beginPath(); g.moveTo(150, 300); g.lineTo(362, 300); g.lineTo(256, 450); g.closePath(); g.fill();
+      g.strokeStyle = '#3ae8ff'; g.shadowColor = '#3ae8ff'; g.lineWidth = 9;
+      g.beginPath(); g.arc(340, 250, 34, 0, 7); g.stroke();
+      for (let i = 0; i < 4; i++) { const cy = 740 + i * 66, cx = 256; for (let k = 0; k < 3; k++) { const p = () => [cx + (Math.floor(rnd() * 3) - 1) * 26, cy + (Math.floor(rnd() * 3) - 1) * 24]; const [a1, b1] = p(), [a2, b2] = p(); g.beginPath(); g.moveTo(a1, b1); g.lineTo(a2, b2); g.stroke(); } }
+      g.strokeStyle = '#ff4ab8'; g.shadowColor = '#ff4ab8'; g.lineWidth = 6; g.strokeRect(40, 40, W_ - 80, H_ - 80);
+    });
+    const mat = new T.ShaderMaterial({ transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, fog: false,
+      uniforms: { map: { value: tex }, time: HZ.time },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+      fragmentShader: `uniform sampler2D map; uniform float time; varying vec2 vUv; float h(float n){ return fract(sin(n) * 43758.5453); }
+        void main(){ vec2 uv = vUv; float g = step(0.985, h(floor(time * 9.0))) * (h(floor(uv.y * 30.0) + time) - 0.5) * 0.06; uv.x += g;
+          vec4 t = texture2D(map, uv); float bands = 0.65 + 0.35 * sin(uv.y * 260.0 - time * 6.0); float roll = 0.75 + 0.25 * smoothstep(0.1, 0.0, abs(fract(uv.y - time * 0.2) - 0.5));
+          float fl = 0.85 + 0.15 * sin(time * 31.0) * sin(time * 7.0);
+          gl_FragColor = vec4(t.rgb * t.a * bands * roll * fl * 0.55, 1.0); }` });
+    return new T.Mesh(new T.PlaneGeometry(w, h), mat);
+  }
+  // police hover cruiser: dark hull, head lights, alternating red/blue roof lights, a searchlight on the belly
+  function cruiserModel() {
+    const g = new T.Group(), hullM = new T.MeshLambertMaterial({ color: 0x1a1c20 }), trimM = new T.MeshLambertMaterial({ color: 0x3a3c40 });
+    const hull = new T.Mesh(new T.BoxGeometry(1.7, 0.5, 4.2), hullM); g.add(hull);
+    const nose = new T.Mesh(new T.CylinderGeometry(0.2, 0.85, 1.2, 8, 1), hullM); nose.rotation.x = Math.PI / 2; nose.scale.set(1, 1, 0.45); nose.position.set(0, -0.02, -2.6); g.add(nose);
+    const cab = new T.Mesh(new T.BoxGeometry(1.4, 0.45, 1.8), new T.MeshLambertMaterial({ color: 0x0a1418, emissive: 0x0a2a30 })); cab.position.set(0, 0.42, -0.4); g.add(cab);
+    for (const s of [-1, 1]) { const pod = new T.Mesh(new T.CylinderGeometry(0.32, 0.38, 1.4, 10), trimM); pod.rotation.x = Math.PI / 2; pod.position.set(s * 1.05, -0.15, 1.1); g.add(pod); }
+    const bar = new T.Mesh(new T.BoxGeometry(1.0, 0.1, 0.25), trimM); bar.position.set(0, 0.7, -0.1); g.add(bar);
+    g.userData.red = W.glow(0xff1a10, 1.2, -0.35, 0.78, -0.1, g, 1); g.userData.blue = W.glow(0x2a5aff, 1.2, 0.35, 0.78, -0.1, g, 1);
+    for (const s of [-1, 1]) W.glow(0xd8f0ff, 1.4, s * 0.55, 0.0, -2.75, g, 0.9);
+    for (const s of [-1, 1]) W.glow(0xff7a20, 0.9, s * 1.05, -0.15, 1.85, g, 0.8);
+    g.userData.belly = V3(0, -0.3, -0.6);
+    return g;
+  }
+  NR.env.beam = beam; NR.env.hazeSlab = hazeSlab;
+
   // ================================================================ OFFICE
   function buildOffice(q) {
-    const L = new W.Level('office', 0x0a0706, 0.03), S = L.scene;
-    S.userData.expo = 1.15;
+    const L = new W.Level('office', 0x0b1a1d, 0.085), S = L.scene; S.background = new T.Color(0x05090a);
+    S.userData.expo = 1.2;
     const BACK = -4.6, DESK_Y = 0.786; L.DESK_Y = DESK_Y;
     const DOOR = { x0: -1.5, x1: -0.5, h: 2.2 }, WIN = { x0: 0.15, x1: 1.55, y0: 0.8, y1: 2.45 };
     // door: GLB node when it arrives; the collider is ours (the slice removes it when the door opens)
@@ -82169,7 +82366,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
         void main(){ vec2 uv=vUv*vec2(46.,1.); float col=floor(uv.x); float fx=fract(uv.x);
           float sp=0.25+h(col)*0.6; float y=fract(vUv.y*(1.5+h(col*3.1)*2.)+time*sp+h(col*7.)); float streak=smoothstep(0.86,1.,y)*smoothstep(0.5,0.0,abs(fx-0.5))*step(0.35,h(col*1.7));
           vec2 d=vUv*vec2(70.,110.); vec2 id=floor(d); float drop=step(0.93,h(dot(id,vec2(12.9,78.2))))*smoothstep(0.45,0.1,length(fract(d)-0.5));
-          gl_FragColor=vec4(vec3(1.0,0.62,0.3), streak*0.4+drop*0.3+0.03); }` }));
+          gl_FragColor=vec4(vec3(0.62,0.85,1.0), streak*0.4+drop*0.3+0.04); }` }));
     glass.position.set(wcx, wcy, BACK - 0.1); S.add(glass);
     const city = new T.Group(); S.add(city);
     const cmat = W.basic(0xffffff, { map: cityTex(1024, 1024, 77), fog: false });
@@ -82185,33 +82382,58 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const hat = NR.fx ? NR.fx.hatModel(0x2a2420) : new T.Group(); hat.position.set(1.78, 1.83, 1.86); hat.rotation.set(0.12, -0.6, 0.05); S.add(hat);
     L.ashTip = V3(0.25, DESK_Y + 0.03, -0.62);
     // real-time light for the characters and the code props (the set itself is baked)
-    S.add(new T.HemisphereLight(0x4a3428, 0x0c0806, 0.9));
+    S.add(new T.HemisphereLight(0x2a4048, 0x0c0806, 0.9));
     const cookie = W.tex(512, 512, (g, w, h) => { g.fillStyle = '#000'; g.fillRect(0, 0, w, h); const x0 = w * 0.12, x1 = w * 0.88, y0 = h * 0.08, y1 = h * 0.92;
       const n = 22, sh = (y1 - y0) / n; for (let i = 0; i < n; i++) { g.fillStyle = '#fff'; g.fillRect(x0, y0 + i * sh + sh * 0.42, x1 - x0, sh * 0.5); }
-      g.fillStyle = '#000'; g.fillRect(w * 0.5 - 7, y0, 14, y1 - y0); g.fillRect(x0, y0 + (y1 - y0) * 0.5 - 6, x1 - x0, 12); g.filter = 'blur(1px)'; g.drawImage(g.canvas, 0, 0); }, false);
-    const spot = new T.SpotLight(0xff9a40, 190, 30, 0.24, 0.25, 1.2);
+      g.fillStyle = '#000'; g.fillRect(w * 0.5 - 7, y0, 14, y1 - y0); g.fillRect(x0, y0 + (y1 - y0) * 0.5 - 6, x1 - x0, 12); g.filter = 'blur(3px)'; g.drawImage(g.canvas, 0, 0); }, false);
+    const spot = new T.SpotLight(0x9fd8ff, 190, 30, 0.24, 0.25, 1.2);
     spot.position.set(1.6, 4.6, -10.0); spot.target.position.set(-0.8, 0.6, -1.0); S.add(spot, spot.target);
     spot.map = cookie; spot.castShadow = true; spot.shadow.mapSize.set(q === 'high' ? 1024 : 512, q === 'high' ? 1024 : 512); spot.shadow.camera.near = 4; spot.shadow.camera.far = 20; spot.shadow.bias = -0.0008;
     const lc = new T.PerspectiveCamera(T.MathUtils.radToDeg(0.24) * 2, 1, 0.5, 30); lc.position.copy(spot.position); lc.lookAt(spot.target.position); lc.updateMatrixWorld(); lc.updateProjectionMatrix();
-    L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0xffa050, k: 0.14, maxD: 9, yTop: 2.6, zMin: BACK - 0.12 };
+    L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0x8fd4ff, k: 0.08, maxD: 6, yTop: 2.6, zMin: BACK + 0.15 };
     L.spot = spot;
     const lampLight = new T.PointLight(0xffb36a, 2.2, 3.4, 1.8); lampLight.position.set(-0.52, DESK_Y + 0.29, -0.67); S.add(lampLight);
     const velaRim = new T.PointLight(0xffa050, 3.0, 3.0, 1.6); velaRim.position.set(-0.9, 1.5, -0.2); S.add(velaRim);
-    const hallLight = new T.PointLight(0xffa860, 2.5, 4.5, 1.6); hallLight.position.set(-1.0, 2.3, BACK - 1.6); S.add(hallLight);
+    const hallLight = new T.PointLight(0x9fe0ff, 5.0, 5.0, 1.6); hallLight.position.set(-1.0, 2.3, BACK - 1.8); S.add(hallLight);
+    // backlight: the hall tube floods the corridor haze, so whoever stands in the open door is a silhouette
+    beam(S, V3(-1.0, 2.58, BACK - 1.7), V3(-1.0, 0.0, BACK - 1.2), 0.08, 1.0, 0x6ad0ff, 0.5);
+    hazeSlab(S, V3(-1.0, 1.25, BACK - 2.4), 2.0, 2.5, 0x3aa8c8, 0.55); hazeSlab(S, V3(-1.0, 1.3, BACK - 1.1), 1.6, 2.4, 0x2a90b0, 0.3);
+    W.glow(0xa8e8ff, 1.6, -1.0, 2.56, BACK - 1.7, S, 0.6);
+    // warm practicals in the cold room: desk lamp pool, the wall bar
+    beam(S, V3(-0.52, DESK_Y + 0.3, -0.67), V3(-0.45, DESK_Y, -0.6), 0.06, 0.38, 0xffa040, 0.08);
+    W.glow(0xff8a20, 0.9, 2.06, 1.8, -2.28, S, 0.5);
+    // window light through the blinds into the haze (the half-res shaft pass draws the stripes; this adds body)
+    hazeSlab(S, V3(0.2, 1.4, -2.0), 4.0, 2.6, 0x1a5060, 0.18);
+    // the video-phone on the desk: CRT with scanlines, lighting the desk and faces cold
+    const vp = new T.Group(); vp.position.set(0.55, DESK_Y, -0.62); vp.rotation.y = -0.45; S.add(vp);
+    const bodyM = new T.MeshLambertMaterial({ color: 0x2a2620 }), darkM = new T.MeshLambertMaterial({ color: 0x0c0b0a });
+    const body = new T.Mesh(new T.BoxGeometry(0.3, 0.24, 0.26), bodyM); body.position.set(0, 0.14, -0.02); vp.add(body);
+    const hood = new T.Mesh(new T.BoxGeometry(0.32, 0.03, 0.3), darkM); hood.position.set(0, 0.27, 0.0); vp.add(hood);
+    const base = new T.Mesh(new T.BoxGeometry(0.34, 0.03, 0.3), darkM); base.position.set(0, 0.015, 0.0); vp.add(base);
+    const keys = new T.Mesh(new T.BoxGeometry(0.22, 0.02, 0.08), new T.MeshLambertMaterial({ color: 0x8a7a60 })); keys.position.set(0, 0.04, 0.16); keys.rotation.x = 0.2; vp.add(keys);
+    const handset = new T.Mesh(new T.CapsuleGeometry(0.022, 0.16, 4, 8), darkM); handset.rotation.z = Math.PI / 2; handset.position.set(0, 0.29, 0.02); vp.add(handset);
+    const scr = crtScreen(0.22, 0.165, (g, w, h) => { g.fillStyle = '#020806'; g.fillRect(0, 0, w, h);
+      g.strokeStyle = '#6af0ff'; g.lineWidth = 3; g.beginPath(); g.ellipse(w * 0.5, h * 0.42, w * 0.13, h * 0.22, 0, 0, 7); g.stroke();
+      g.beginPath(); g.moveTo(w * 0.28, h * 0.92); g.quadraticCurveTo(w * 0.5, h * 0.55, w * 0.72, h * 0.92); g.stroke();
+      g.fillStyle = '#6af0ff'; g.font = 'bold 16px Courier New'; g.fillText('CALL 47-C', 12, 22); g.fillText('\u25CF REC', w - 74, 22);
+      g.strokeStyle = '#ffb040'; g.lineWidth = 2; g.beginPath(); for (let x = 0; x < w; x += 4) g.lineTo(x, h - 16 + Math.sin(x * 0.2) * 6 * Math.sin(x * 0.03)); g.stroke(); }, 0x9fe8ff);
+    scr.position.set(0, 0.145, 0.111); vp.add(scr);
+    const vpLight = new T.PointLight(0x7ad8ff, 1.6, 2.2, 1.8); vpLight.position.set(0.5, DESK_Y + 0.25, -0.4); S.add(vpLight);
+    W.glow(0x6ad8ff, 0.45, 0.55, DESK_Y + 0.15, -0.5, S, 0.25);
     const neonSpill = new T.PointLight(0xff2a10, 2.4, 6, 1.6); neonSpill.position.set(0.6, 2.4, BACK + 0.3); S.add(neonSpill);
-    L.sideLight = { ambient: 0xa88068, key: 0xffc080, warm: 0x8a3414 };
+    L.sideLight = { ambient: 0x9a7868, key: 0xb8e4ff, warm: 0x9a3814 };
     // a floor shadow catcher for 3D characters (the set itself does not take real-time shadows)
     const catcher = new T.Mesh(new T.PlaneGeometry(4.2, 6.8), new T.ShadowMaterial({ opacity: 0.45 })); catcher.rotation.x = -Math.PI / 2; catcher.position.set(0, 0.004, -1.2); catcher.receiveShadow = true; S.add(catcher);
-    if (NR.fx) { S.add(NR.fx.smoke(160, L.ashTip, { rise: 0.9, spread: 0.08, size: 26, alpha: 0.2, life: 5, tint: 0xd8c8b8 }, L.shaft)); S.add(NR.fx.smoke(50, V3(0, 1.0, -2.2), { rise: 1.6, spread: 1.4, size: 260, alpha: 0.025, life: 30, tint: 0xc8a888 }, L.shaft)); }
+    if (NR.fx) { S.add(NR.fx.smoke(160, L.ashTip, { rise: 0.9, spread: 0.08, size: 26, alpha: 0.2, life: 5, tint: 0xd8c8b8 }, L.shaft)); S.add(NR.fx.smoke(70, V3(0, 1.0, -2.2), { rise: 1.6, spread: 1.6, size: 300, alpha: 0.04, life: 30, tint: 0x8ab8c8 }, L.shaft)); }
     let blades = null;
-    L.updaters.push((dt, t) => { U.time.value = t; if (blades) blades.rotation.y = t * 0.9; cruiser.position.x = 1.6 - ((t * 0.35) % 5.0); cruiser.position.y = 2.6 + Math.sin(t * 0.8) * 0.1; neonSpill.intensity = 2.4 * (Math.sin(t * 1.3) > 0.97 ? 0.3 : 1); });
+    L.updaters.push((dt, t) => { U.time.value = t; HZ.time.value = t; { const P = NR.player; if (P.vm) P.vm.cigDefault = !!(P.smoked > 0 || P.forceCig || P.litT > 0); } /* no cigarette in hand until Vela lights it */ vpLight.intensity = 1.6 * (0.9 + 0.1 * Math.sin(t * 47)); if (blades) blades.rotation.y = t * 0.9; cruiser.position.x = 1.6 - ((t * 0.35) % 5.0); cruiser.position.y = 2.6 + Math.sin(t * 0.8) * 0.1; neonSpill.intensity = 2.4 * (Math.sin(t * 1.3) > 0.97 ? 0.3 : 1); });
     L.spawn = { pos: V3(0.0, 0, 1.6), yaw: 0 };
     L.exitDoor = { x: -1.0, z: BACK - 0.3 };
     L.finish();
     attach(L, 'office', (root) => {
       const d = node(root, 'door'); if (d) { doorProxy.position.copy(d.position); d.position.set(0, 0, 0); doorProxy.add(d); }
       blades = node(root, 'fan_blades');
-    }, { lm: 8.5, baked: 8.5 });
+    }, { lm: 4.6, baked: 4.6 });
     return L;
   }
 
@@ -82238,7 +82460,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
           outgoingLight *= 1.0 - pm * 0.55; diffuseColor.a = 1.0 - pm;
           #include <opaque_fragment>`);
     };
-    mat.needsUpdate = true; mat.userData.wet = true;
+    mat.customProgramCacheKey = () => 'wetGround'; mat.needsUpdate = true; mat.userData.wet = true;
   }
   // a mirrored copy of the lit set under y = 0: seen only through the transparent puddles
   function mirror(L, objs, dim) {
@@ -82252,8 +82474,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // ================================================================ ALLEY
   function buildAlley(q) {
-    const L = new W.Level('alley', 0x120a06, 0.045), S = L.scene; L.outdoor = true; S.userData.expo = 1.25;
-    S.background = new T.Color(0x070403);
+    const L = new W.Level('alley', 0x0c1c20, 0.05), S = L.scene; L.outdoor = true; S.userData.expo = 1.25;
+    S.background = new T.Color(0x060a0c);
     // the skyline beyond the street mouth (sodium windows, distant neon, haze)
     const sky = new T.Mesh(new T.PlaneGeometry(140, 60), W.basic(0xffffff, { map: cityTex(2048, 1024, 31, { signs: [['HOTEL', '#ff3a1e', 0.36, 0.52], ['EAT', '#2affc8', 0.6, 0.6], ['BAR', '#ff8a1a', 0.47, 0.66], ['DANCING', '#ff2a6a', 0.7, 0.48]] }), fog: false }));
     sky.position.set(0, 22, -95); S.add(sky);
@@ -82263,7 +82485,20 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     S.add(new T.HemisphereLight(0x5a3a2a, 0x140c08, 0.9));
     const pl = (c, i, x, y, z, d) => { const p = new T.PointLight(c, i, d || 9, 1.6); p.position.set(x, y, z); S.add(p); return p; };
     const signs = [pl(0xff2a14, 40, -2.4, 4.4, -7, 11), pl(0x20ffc0, 45, 2.4, 4.4, -14, 12), pl(0xff8a20, 40, -2.4, 3.6, -24, 11), pl(0xff2a6a, 34, 2.4, 5.2, -30, 11)];
-    for (const [x, z] of [[-2.95, -9], [2.95, -17], [-2.95, -27]]) { pl(0xffa860, 10, x, 2.6, z, 6); W.glow(0xff9a40, 0.4, x, 2.62, z, S, 0.4); }
+    for (const [x, z] of [[-2.95, -9], [2.95, -17], [-2.95, -27]]) { pl(0xffa860, 10, x, 2.6, z, 6); W.glow(0xff9a40, 0.4, x, 2.62, z, S, 0.4); beam(S, V3(x, 2.58, z), V3(x * 0.72, 0, z), 0.05, 0.9, 0xff9a40, 0.3); }
+    // haze: cold teal air with warm and neon pools; beams from the practicals
+    for (const [x, y, z, c, a] of [[0, 3.0, -8, 0x1a6878, 0.26], [0, 3.2, -16, 0x0a7068, 0.22], [0, 3.0, -24, 0x1a5868, 0.22], [0, 3.4, -31, 0x601040, 0.18], [0, 4.0, -40, 0x2a4a58, 0.3]]) hazeSlab(S, V3(x, y, z), 6.4, 6.0, c, a);
+    beam(S, V3(2.1, 3.42, -36.6), V3(0.6, 0, -34.8), 0.12, 2.4, 0xff8a20, 0.3);
+    for (const z of [-2.3, -3.15, -4.0]) { W.glow(0xff5010, 0.55, 1.6, 2.08, z, S, 0.55); beam(S, V3(1.6, 2.0, z), V3(1.4, 0.0, z), 0.04, 0.5, 0xff6020, 0.12); }
+    // the hologram advert over the street mouth (translucent, banded, glitching)
+    const holo = hologram(7, 14); holo.position.set(1.0, 11, -47); S.add(holo);
+    W.glow(0xff4ab8, 12, 1.0, 11, -47.2, S, 0.12); W.glow(0x3ae8ff, 6, 1.6, 13, -47.1, S, 0.08);
+    const holoLight = pl(0xff4ab8, 30, 0.5, 8, -40, 16);
+    // police hover cruiser crossing overhead, red/blue roof lights, a searchlight sweeping the alley
+    const cop = cruiserModel(); S.add(cop);
+    const copBeam = beam(S, V3(0, 12, -14), V3(0, 0, -14), 0.15, 2.2, 0xd8f0ff, 0.55);
+    const copSpot = new T.SpotLight(0xd0ecff, 0, 30, 0.16, 0.5, 1.2); S.add(copSpot, copSpot.target);
+    const copRB = pl(0xff2010, 0, 0, 12, -14, 18);
     const cookie = W.tex(256, 256, (g, w, h) => { g.fillStyle = '#000'; g.fillRect(0, 0, w, h); const r = g.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, w / 2); r.addColorStop(0, '#fff'); r.addColorStop(0.7, '#aaa'); r.addColorStop(1, '#000'); g.fillStyle = r; g.fillRect(0, 0, w, h); }, false);
     const spot = new T.SpotLight(0xff9030, 260, 18, 0.62, 0.4, 1.4);
     spot.position.set(2.1, 3.45, -36.6); spot.target.position.set(0.4, 0, -34.6); S.add(spot, spot.target);
@@ -82271,7 +82506,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const lc = new T.PerspectiveCamera(T.MathUtils.radToDeg(0.62) * 2, 1, 0.5, 30); lc.position.copy(spot.position); lc.lookAt(spot.target.position); lc.updateMatrixWorld(); lc.updateProjectionMatrix();
     L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0xffa040, k: 0.13, maxD: 30, yTop: 3.6 }; L.spot = spot;
     W.glow(0xffa040, 1.6, 2.1, 3.42, -36.6, S, 0.9); W.glow(0xffa040, 1.3, 2.1, -3.42, -36.6, S, 0.35);
-    L.sideLight = { ambient: 0x4a3426, key: 0xffa040, warm: 0x401808 };
+    L.sideLight = { ambient: 0x5a4a44, key: 0xffa040, warm: 0x401808 };
     // glows around the blade signs (+ their reflections)
     const halos = [];
     for (const [c, x, y, z, s] of [[0xff2a14, -2.6, 4.5, -7, 3.2], [0x20ffc0, 2.6, 4.55, -14, 3.6], [0xff8a20, -2.6, 3.75, -24, 2.4], [0xff2a6a, 2.6, 5.3, -30, 3.2]]) {
@@ -82281,11 +82516,24 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     if (NR.fx) {
       S.add(NR.fx.smoke(46, V3(0.4, 0.05, -19), { rise: 2.6, spread: 0.45, size: 160, alpha: 0.035, life: 6, tint: 0xb8a898 }, L.shaft));
       S.add(NR.fx.smoke(24, V3(-2.9, 0.4, -24.6), { rise: 1.8, spread: 0.3, size: 140, alpha: 0.03, life: 5, tint: 0xa89888 }, L.shaft));
+      S.add(NR.fx.smoke(30, V3(2.6, 1.3, -3.9), { rise: 1.4, spread: 0.2, size: 120, alpha: 0.05, life: 4, tint: 0xd8c0a8 }, L.shaft)); // steam off the noodle pot
     }
+    const _a = V3(0, 0, 0), _b = V3(0, 0, 0);
+    L.updaters.push((dt, t) => {
+      HZ.time.value = t; holoLight.intensity = 30 * (0.8 + 0.2 * Math.sin(t * 31) * Math.sin(t * 7));
+      const ph = (t % 28) / 28, on = ph < 0.62; cop.visible = on; copBeam.visible = on;
+      if (on) { const k = ph / 0.62; cop.position.set(-22 + 44 * k, 12.5 + Math.sin(t * 0.7) * 0.4, -12 - 8 * Math.sin(k * Math.PI)); cop.rotation.set(0.04, -Math.PI / 2 + 0.25 * Math.sin(k * Math.PI), -0.08 * Math.cos(k * 6.28));
+        _a.copy(cop.position).add(V3(0, -0.4, 0)); _b.set(Math.sin(t * 0.9) * 2.2, 0, cop.position.z - 6 + Math.sin(t * 0.6) * 9); aimBeam(copBeam, _a, _b);
+        copSpot.position.copy(_a); copSpot.target.position.copy(_b); copSpot.intensity = 320 * Math.min(1, Math.min(k, 1 - k) * 8);
+        const rb = Math.sin(t * 9) > 0; cop.userData.red.material.opacity = rb ? 1 : 0.15; cop.userData.blue.material.opacity = rb ? 0.15 : 1;
+        copRB.position.copy(cop.position); copRB.color.setHex(rb ? 0xff2010 : 0x2a5aff); copRB.intensity = 40 * Math.min(1, Math.min(k, 1 - k) * 8); }
+      else { copSpot.intensity = 0; copRB.intensity = 0; }
+    });
     L.updaters.push((dt, t) => { for (let i = 0; i < signs.length; i++) { const k = (L.neonK && L.neonK[i] != null) ? L.neonK[i] : 1; signs[i].intensity = [40, 45, 40, 34][i] * k; halos[i].material.opacity = 0.28 * k; } });
     L.spawn = { pos: V3(0, 0, 0.5), yaw: 0 };
     L.bodyPos = V3(0.2, 0, -34.5);
     L.finish();
+    L.updaters.push(() => { if (NR.player.vm) NR.player.vm.cigDefault = true; });
     attach(L, 'alley', (root) => {
       let wet = null; root.traverse(o => { if (o.isMesh && /WET/.test(o.material.name)) wet = o; });
       if (wet) wetGround(wet.material, { k: 0.62 });
@@ -82295,13 +82543,13 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       const order = ['red', 'teal', 'orange', 'pink']; L.neonK = [1, 1, 1, 1];
       L.updaters.push(() => { for (const n of L.neon) { const i = order.findIndex(c => n.mat.name.endsWith(c)); if (i >= 0) L.neonK[i] = n.mat.color.r / Math.max(1e-3, n.mat.userData.base.r) || 1; } });
       for (const n of L.neon) if (/red$/.test(n.mat.name)) n.mesh.userData.flicker = 0.18;
-    }, { lm: 4, baked: 4, neon: 0.5 });
+    }, { lm: 3, baked: 3.2, neon: 0.5 });
     return L;
   }
 
   // ================================================================ THE BLUE ORCHID
   function buildClub(q) {
-    const L = new W.Level('club', 0x0e0908, 0.03), S = L.scene; S.userData.expo = 1.3;
+    const L = new W.Level('club', 0x0c1a1e, 0.05), S = L.scene; S.userData.expo = 1.3; S.background = new T.Color(0x05090a);
     const RH = 4.2;
     // real-time light for the characters: warm practicals, the blue neon over the stage, the stage spot
     S.add(new T.HemisphereLight(0x6a4a3a, 0x2a1810, 1.6));
@@ -82319,12 +82567,25 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0xe8c8a8, k: 0.11, maxD: 18, yTop: 4.1 }; L.spot = spot;
     W.glow(0xffd8a8, 0.8, 1.0, RH - 0.32, -11.5, S);
     L.sideLight = { ambient: 0x5a4438, key: 0xffd0a0, warm: 0x5a2010 };
-    if (NR.fx) S.add(NR.fx.smoke(90, V3(-0.5, 0.8, -12), { rise: 2.6, spread: 4.0, size: 380, alpha: 0.012, life: 34, tint: 0x9a8a80 }, L.shaft));
+    if (NR.fx) S.add(NR.fx.smoke(110, V3(-0.5, 0.8, -12), { rise: 2.6, spread: 4.5, size: 380, alpha: 0.02, life: 34, tint: 0x7a9aa8 }, L.shaft));
     L.signLight = new T.PointLight(0xff2a14, 0, 18, 1.2); L.signLight.position.set(0.6, 3.8, -10.5); S.add(L.signLight); // the title sign's red cast (landing menu)
-    L.updaters.push((dt, t) => { neonLight.intensity = 26 * (Math.sin(t * 0.9) > 0.985 ? 0.4 : 1); });
+    // haze + beams: chandeliers and sconces pour warm light down through cold smoke; the stage glows blue
+    for (const [x, z] of [[-2, -6], [2.5, -10], [-1, -14]]) beam(S, V3(x, RH - 0.95, z), V3(x, 0, z), 0.3, 2.0, 0xffa050, 0.16);
+    for (const [x, z, s] of [[-8, -3, 1], [-8, -16, 1], [-8, -19.5, 1], [8, -2.5, -1], [8, -15.6, -1]]) { beam(S, V3(x + s * 0.15, 2.65, z), V3(x + s * 0.3, RH, z), 0.05, 0.5, 0xffa050, 0.25); beam(S, V3(x + s * 0.15, 2.4, z), V3(x + s * 0.4, 0.9, z), 0.05, 0.4, 0xff9040, 0.18); }
+    for (const z of [-4.5, -8.5, -12.5]) W.glow(0xff9a40, 0.9, 7.82, 2.42, z - 1.1, S, 0.35);
+    for (const [x, y, z, c, a] of [[-1.5, 2.4, -20.5, 0x1a40a0, 0.3], [0, 2.6, -12, 0x0e3a44, 0.22], [-5.5, 2.4, -9, 0x5a2a10, 0.18], [5.5, 2.2, -9, 0x5a2a10, 0.16]]) hazeSlab(S, V3(x, y, z), 7.0, 4.4, c, a);
+    // the entrance: cold street light pours through the door glass and transom; gunmen in the door are silhouettes
+    const dglow = new T.MeshBasicMaterial({ color: new T.Color(0.3, 0.55, 0.7), fog: false });
+    for (const x of [-0.46, 0.46]) { const p = new T.Mesh(new T.CircleGeometry(0.16, 24), dglow); p.position.set(x, 1.55, 1.015); p.rotation.y = Math.PI; S.add(p); W.glow(0x8fd8ff, 0.9, x, 1.55, 1.0, S, 0.3); } // light through the porthole glass
+    const tr = new T.Mesh(new T.PlaneGeometry(1.9, 0.3), dglow); tr.position.set(0, 2.72, 1.04); tr.rotation.y = Math.PI; S.add(tr);
+    beam(S, V3(0, 2.7, 1.0), V3(0, 0, -3.5), 0.5, 2.4, 0x7ad0ff, 0.28); beam(S, V3(0, 1.5, 1.0), V3(0, 0, -2.2), 0.6, 1.4, 0x7ad0ff, 0.18);
+    hazeSlab(S, V3(0, 1.4, 0.4), 3.4, 2.8, 0x2a90b0, 0.4); W.glow(0x9fe0ff, 3.0, 0, 2.0, 0.9, S, 0.22);
+    pl(0x8fd8ff, 22, 0, 2.2, 0.2, 7);
+    L.updaters.push((dt, t) => { HZ.time.value = t; neonLight.intensity = 26 * (Math.sin(t * 0.9) > 0.985 ? 0.4 : 1); });
     L.spawn = { pos: V3(0, 0, -0.6), yaw: 0 };
     L.doloresPos = V3(5.6, 0, -16.6);
     L.finish();
+    L.updaters.push(() => { if (NR.player.vm) NR.player.vm.cigDefault = true; });
     attach(L, 'club', null, { lm: 8, baked: 7, neon: 0.034 });
     return L;
   }
@@ -82340,6 +82601,12 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     get('club').then(() => get('office')).then(() => get('alley'));
   }
 })();
+
+</script>
+<script>/* anim_data.js */
+// NEON RAIN: Vela's painted walk animation table (written by tools/vela_walk/vw_sheets.py). null = not built yet: the old billboard is used.
+NR.ANIM = NR.ANIM || {};
+NR.ANIM.vela = {"world":[1.0,2.0],"centerY":0.97,"walk":{"frames":16,"cycle":1.0464,"speed":0.9233,"plants":[0.9706,0.4706],"angles":{"0":{"sheet":"vela_walk_a000.webp","cols":4,"rows":4},"45":{"sheet":"vela_walk_a045.webp","cols":4,"rows":4},"90":{"sheet":"vela_walk_a090.webp","cols":4,"rows":4},"135":{"sheet":"vela_walk_a135.webp","cols":4,"rows":4},"180":{"sheet":"vela_walk_a180.webp","cols":4,"rows":4},"225":{"sheet":"vela_walk_a225.webp","cols":4,"rows":4},"270":{"sheet":"vela_walk_a270.webp","cols":4,"rows":4},"315":{"sheet":"vela_walk_a315.webp","cols":4,"rows":4}}},"stop":{"frames":24,"fps":16.0,"root":[[0.0,0.0],[0.0621,0.0],[0.1208,0.0],[0.176,0.0],[0.2276,0.0],[0.2758,0.0],[0.3205,0.0],[0.3616,0.0],[0.4008,0.0001],[0.4361,0.0002],[0.4676,0.0004],[0.4955,0.0007],[0.5199,0.001],[0.5411,0.0014],[0.5591,0.0018],[0.5741,0.0021],[0.5862,0.0025],[0.5957,0.0028],[0.6026,0.003],[0.6072,0.0032],[0.6094,0.0034],[0.6098,0.0034],[0.6098,0.0034],[0.6098,0.0034]],"turn":35.0,"phase":0.625,"heels":[7,17],"sheet":"vela_stop.webp","cols":6,"rows":4},"idle":{"frames":32,"fps":8.0,"sheet":"vela_idlew.webp","cols":8,"rows":4},"pose":{"index":{"0":0,"45":1,"90":2,"135":3,"180":4,"225":5,"270":6,"315":7},"sheet":"vela_pose.webp","cols":4,"rows":2}};
 
 </script>
 <script>/* actors.js */
@@ -82361,21 +82628,27 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const sh = level.shaft;
     return new T.ShaderMaterial({
       transparent: false, side: T.DoubleSide,
-      uniforms: { map: { value: null }, flip: { value: 0 }, walkPh: { value: 0 }, walk: { value: 0 }, side: { value: 0 }, cookie: { value: sh ? sh.cookie : blackTex }, lightVP: { value: sh ? sh.lightVP : new T.Matrix4() },
+      uniforms: { map: { value: null }, rect: { value: new T.Vector4(0, 0, 1, 1) }, flip: { value: 0 }, walkPh: { value: 0 }, walk: { value: 0 }, side: { value: 0 }, cookie: { value: sh ? sh.cookie : blackTex }, lightVP: { value: sh ? sh.lightVP : new T.Matrix4() },
         ambient: { value: new T.Color(sl.ambient) }, key: { value: new T.Color(sl.key) }, warm: { value: new T.Color(sl.warm) }, keyGain: { value: sh ? 1.0 : 0.0 },
-        fogC: { value: level.scene.fog.color }, fogD: { value: level.scene.fog.density }, hit: { value: 0 } },
-      vertexShader: 'uniform float flip; varying vec2 vUv; varying vec3 vW; varying float vDepth; void main(){ vUv=vec2(flip>0.5?1.-uv.x:uv.x, uv.y); vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vDepth=-mv.z; gl_Position=projectionMatrix*mv; }',
-      fragmentShader: `uniform sampler2D map, cookie; uniform mat4 lightVP; uniform vec3 ambient, key, warm, fogC; uniform float keyGain, fogD, hit, walk, walkPh, side; varying vec2 vUv; varying vec3 vW; varying float vDepth;
+        fogC: { value: level.scene.fog.color }, fogD: { value: level.scene.fog.density }, hit: { value: 0 },
+        rimGain: { value: 0 }, rimSide: { value: 1 }, rimCol: { value: new T.Color(0xf0dcc4) } },
+      vertexShader: 'uniform float flip; uniform vec4 rect; varying vec2 vUv, vL; varying vec3 vW; varying float vDepth; void main(){ vL=vec2(flip>0.5?1.-uv.x:uv.x, uv.y); vUv=rect.xy+vL*rect.zw; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vDepth=-mv.z; gl_Position=projectionMatrix*mv; }',
+      fragmentShader: `uniform vec4 rect; uniform float rimGain, rimSide; uniform vec3 rimCol; uniform sampler2D map, cookie; uniform mat4 lightVP; uniform vec3 ambient, key, warm, fogC; uniform float keyGain, fogD, hit, walk, walkPh, side; varying vec2 vUv, vL; varying vec3 vW; varying float vDepth;
         void main(){ vec2 uv = vUv;
           // two-pose walk: below the hem, the leg on one half lifts and swings while the other plants, then they swap
           if (walk > 0.0 && uv.y < 0.34) { float k = 1.0 - uv.y / 0.34; float s = sin(walkPh); float leg = uv.x < 0.5 ? 1.0 : -1.0;
             float lift = max(0.0, s * leg) * 0.022 * k * walk; uv.y -= lift;
             uv.x -= s * 0.035 * k * walk * side; }
-          vec4 t=texture2D(map,uv); if(t.a<0.5) discard; vec3 c=t.rgb*t.rgb; // ~linear
+          vec4 t=texture2D(map,uv); if(t.a<0.5) discard;
+          // 1-2 px matte erosion: the light anti-aliased edge of the sprite (its old background) never reaches the screen
+          vec2 e = max(abs(dFdx(uv)), abs(dFdy(uv))) * 1.5; float ea = min(min(texture2D(map, uv + vec2(e.x, 0.)).a, texture2D(map, uv - vec2(e.x, 0.)).a), min(texture2D(map, uv + vec2(0., e.y)).a, texture2D(map, uv - vec2(0., e.y)).a));
+          if (ea < 0.5) discard; t.rgb *= mix(0.75, 1.0, smoothstep(0.5, 0.95, ea)); vec3 c=t.rgb*t.rgb; // ~linear
           vec4 lp=lightVP*vec4(vW,1.); vec2 luv=lp.xy/lp.w*0.5+0.5; float ck=0.; if(keyGain>0. && lp.w>0. && luv.x>0. && luv.x<1. && luv.y>0. && luv.y<1.) ck=smoothstep(0.3,0.8,texture2D(cookie,luv).r);
-          float side=smoothstep(0.1,0.9,vUv.x);
-          vec3 light = ambient*(1.3+0.7*side) + key*ck*keyGain*(0.4+0.6*side) + warm*(1.0-vUv.y)*0.5;
+          float side=smoothstep(0.1,0.9,vL.x);
+          vec3 light = ambient*(1.3+0.7*side) + key*ck*keyGain*(0.4+0.6*side) + warm*(1.0-vL.y)*0.5;
           vec3 col = c*light*1.25 + vec3(hit,0.,0.);
+          // rim: a warm edge on the side the key light comes from (painted walker only; rimGain 0 elsewhere)
+          if (rimGain > 0.0) { float an = texture2D(map, uv + vec2(rect.z * 0.006 * rimSide, rect.w * 0.002)).a; col += rimCol * rimCol * (1.0 - an) * rimGain * 0.35 * (0.5 + 0.5 * vL.y); } // thin, faint: no halo
           float f = 1.0-exp(-fogD*fogD*vDepth*vDepth); col = mix(col, fogC*fogC, f);
           // red-keep mask for the B&W grade: painted reds (dress, lips) write alpha < 1, the post pass keeps their colour
           float rk = smoothstep(2.0, 2.8, t.r / max(0.03, max(t.g, t.b))) * smoothstep(0.16, 0.3, t.r);
@@ -82426,6 +82699,86 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     remove() { if (this.group.parent) this.group.parent.remove(this.group); }
   }
 
+  // ================================================================ frame-animated painted walker (Vela)
+  // Painted over a mocap walk: 16-frame loop from 8 camera angles, a stop-and-turn clip that carries its own root motion,
+  // an idle loop seen from the front and one still per angle at rest. Walk frames advance with distance walked, so feet do not slide.
+  function loadAnim(who) { return Promise.resolve((NR.ANIM && NR.ANIM[who]) || null); } // table lives in src/anim_data.js (no fetch, no 404)
+  const sheet = name => loadTex(NR.ASSET + 'sprites/' + name);
+  function cellRect(v, s, i) { const c = i % s.cols, r = Math.floor(i / s.cols); v.set(c / s.cols, 1 - (r + 1) / s.rows, 1 / s.cols, 1 / s.rows); }
+  class Walker {
+    constructor(who, level, pos, yaw, D) {
+      this.who = who; this.D = D; this.pos = pos.clone(); this.yaw = yaw || 0; this.rimSrc = level.shaft ? level.shaft.pos : null;
+      this.tex = { walk: {}, stop: {}, pose: sheet(D.pose.sheet), idle: sheet(D.idle.sheet) };
+      if (D.stop.angles) for (const a in D.stop.angles) this.tex.stop[a] = sheet(D.stop.angles[a].sheet); else this.tex.stop['0'] = sheet(D.stop.sheet);
+      for (const a in D.walk.angles) this.tex.walk[a] = sheet(D.walk.angles[a].sheet);
+      this.mat = paintedMat(level); this.mat.uniforms.map.value = this.tex.idle; cellRect(this.mat.uniforms.rect.value, D.idle, 0);
+      this.mesh = new T.Mesh(new T.PlaneGeometry(D.world[0], D.world[1]), this.mat); this.mesh.position.y = D.centerY; this.mesh.renderOrder = 1;
+      const cs = new T.Mesh(new T.PlaneGeometry(0.9, 0.5), new T.MeshBasicMaterial({ map: NR.world.glowTex, color: 0x000000, transparent: true, opacity: 0.75, depthWrite: false }));
+      cs.material.onBeforeCompile = s => { s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', 'vec4 sc=texture2D(map,vMapUv); diffuseColor=vec4(0.,0.,0.,sc.r*opacity);'); };
+      cs.rotation.x = -Math.PI / 2; cs.position.y = 0.012; cs.renderOrder = 1; this.shadow = cs;
+      this.group = new T.Group(); this.group.add(this.mesh, cs); level.scene.add(this.group);
+      this.path = null; this.speed = D.walk.speed; this.mode = 'idle'; this.t = 0; this.dist = 0; this.ph0 = 0; this.stopAt = null; this.clip = null;
+      this.visible = true; this.walking = false; this.sector = 0; this.frame = 0; this.onArrive = null; this.lastPh = 0;
+      this.group.position.copy(this.pos);
+    }
+    walkTo(points, speed, opt) {
+      const stop = !(opt && opt.stop === false), W = this.D.walk, S = this.D.stop;
+      this.path = points.map(p => p.clone()); this.speed = speed || W.speed; this.dist = 0; this.mode = 'walk';
+      let L = 0, prev = this.pos; for (const p of this.path) { L += Math.hypot(p.x - prev.x, p.z - prev.z); prev = p; }
+      const last = this.path.length > 1 ? this.path[this.path.length - 2] : this.pos, end = this.path[this.path.length - 1];
+      const lastLen = Math.hypot(end.x - last.x, end.z - last.z), dClip = S.root[S.root.length - 1][0];
+      this.stopAt = stop && lastLen > dClip + 0.3 ? L - dClip : null; // the clip carries her the last dClip metres onto the mark
+      this.endYaw = Math.atan2(end.x - last.x, end.z - last.z);
+      // start the cycle on the phase that lands the clip's first frame exactly where the loop leaves off
+      this.ph0 = this.stopAt != null ? (((S.phase - this.stopAt / W.cycle) % 1) + 1) % 1 : 0; this.lastPh = this.ph0;
+      return new Promise(r => { this.onArrive = r; });
+    }
+    faceTo(p) { this.yaw = Math.atan2(p.x - this.pos.x, p.z - this.pos.z); }
+    arrive() { this.path = null; this.mode = 'idle'; this.t = 0; const f = this.onArrive; this.onArrive = null; if (f) f(); }
+    update(dt, cam) {
+      const D = this.D, W = D.walk, S = D.stop, u = this.mat.uniforms; this.t += dt; this.walking = false;
+      if (this.mode === 'walk') {
+        if (this.stopAt != null && this.dist >= this.stopAt) { this.mode = 'stop'; this.clip = { t: 0, o: this.pos.clone(), y: this.endYaw, f: -1 }; this.yaw = this.endYaw; }
+        else if (this.path && this.path.length) {
+          const tgt = this.path[0], d = V3(tgt.x - this.pos.x, 0, tgt.z - this.pos.z), L = d.length();
+          if (L < 0.02) { this.path.shift(); if (!this.path.length) this.arrive(); }
+          else {
+            const step = Math.min(L, this.speed * dt); this.pos.addScaledVector(d.normalize(), step); this.dist += step; this.walking = true;
+            let dy = Math.atan2(d.x, d.z) - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * Math.min(1, dt * 6);
+          }
+        } else this.arrive();
+      }
+      if (this.mode === 'stop') {
+        const c = this.clip; c.t += dt; const f = Math.min(S.frames - 1, Math.floor(c.t * S.fps)), r = S.root[f];
+        const sy = Math.sin(c.y), cy = Math.cos(c.y);
+        this.pos.set(c.o.x + sy * r[0] + cy * r[1], 0, c.o.z + cy * r[0] - sy * r[1]);
+        if (f !== c.f && S.heels.includes(f) && NR.audio) NR.audio.fx.heel(); c.f = f;
+        if (c.t >= S.frames / S.fps) { this.yaw = c.y + S.turn * Math.PI / 180; this.arrive(); }
+      }
+      this.group.position.copy(this.pos);
+      const cx = cam.position.x - this.pos.x, cz = cam.position.z - this.pos.z;
+      this.mesh.rotation.y = Math.atan2(cx, cz);
+      let az = Math.atan2(cx, cz) - this.yaw; az = Math.atan2(Math.sin(az), Math.cos(az));
+      const k = ((Math.round(az / (Math.PI / 4)) % 8) + 8) % 8; this.sector = k; const ang = String(k * 45);
+      if (this.mode === 'walk') {
+        const ph = (this.ph0 + this.dist / W.cycle) % 1;
+        for (const p of W.plants) if ((this.lastPh < p && ph >= p) || (this.lastPh > ph && (p > this.lastPh || ph >= p))) { if (NR.audio) NR.audio.fx.heel(); }
+        this.lastPh = ph; this.frame = Math.floor(ph * W.frames) % W.frames;
+        u.map.value = this.tex.walk[ang]; cellRect(u.rect.value, W.angles[ang], this.frame);
+      } else if (this.mode === 'stop') { // the clip was painted from 8 angles around her final facing
+        let az2 = Math.atan2(cx, cz) - (this.clip.y + S.turn * Math.PI / 180); az2 = Math.atan2(Math.sin(az2), Math.cos(az2));
+        const a2 = S.angles ? String((((Math.round(az2 / (Math.PI / 4)) % 8) + 8) % 8) * 45) : '0';
+        u.map.value = this.tex.stop[a2]; cellRect(u.rect.value, S.angles ? S.angles[a2] : S, Math.max(0, this.clip.f));
+      } else if (k === 0) {
+        u.map.value = this.tex.idle; cellRect(u.rect.value, D.idle, Math.floor(this.t * D.idle.fps) % D.idle.frames);
+      } else { u.map.value = this.tex.pose; cellRect(u.rect.value, D.pose, D.pose.index[ang]); }
+      u.flip.value = 0; u.walk.value = 0;
+      if (this.rimSrc) { const cl = Math.hypot(cx, cz) || 1, lx = this.rimSrc.x - this.pos.x, lz = this.rimSrc.z - this.pos.z; u.rimSide.value = (lx * cz - lz * cx) / cl >= 0 ? 1 : -1; u.rimGain.value = 0.55; }
+      this.group.visible = this.visible;
+    }
+    remove() { if (this.group.parent) this.group.parent.remove(this.group); }
+  }
+
   // ================================================================ 3D characters (rigged GLB: 'idle' + 'walk')
   const glbCache = {};
   function loadGLB(url) { if (!glbCache[url]) glbCache[url] = NR.gltf.load(url); return glbCache[url]; }
@@ -82468,6 +82821,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     if (NR.core.settings.chars === '3d' && MODELS[who]) {
       try { return new Model3D(await loadGLB(NR.ASSET + MODELS[who]), level, pos, yaw); } catch (e) { console.warn('3D model failed, using the painted figure', e); }
     }
+    const D = NR.core.settings.chars !== '3d' ? await loadAnim(who) : null;
+    if (D) return new Walker(who, level, pos, yaw, D);
     return new Painted(who, level, pos, yaw);
   }
 
@@ -82590,8 +82945,16 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       this.dead = true; this.state = 'dead'; this.deadT = 0; if (this.cover) { this.cover.taken = null; this.cover = null; }
       this.fallAxis = V3(dir.z, 0, -dir.x).normalize(); this.fallFrom = this.group.quaternion.clone();
       const fwd = Math.sin(this.yaw) * dir.x + Math.cos(this.yaw) * dir.z; // > 0: shot from behind
-      this.deathClip = fwd > 0.3 ? 'die_fwd' : (head && Math.random() < 0.5) || Math.random() < 0.25 ? 'die_slip' : 'die_back';
-      if (this.cr) { this.cr.full(this.deathClip, 0.1, true); this.glint.visible = false; if (this.cone) this.cone.visible = false; }
+      // which fall: from a crouch he folds where he is; shot from behind he pitches forward; from the front he goes back,
+      // buckles to his knees or slips. The fall must have room: rotate it away from tables and walls when it does not.
+      const r_ = Math.random();
+      this.deathClip = this.crouch > 0.5 ? 'die_crouch' : fwd > 0.3 ? 'die_fwd' : (head && r_ < 0.4) || r_ < 0.2 ? 'die_slip' : r_ < 0.55 ? 'die_kneel' : 'die_back';
+      if (this.cr && !this.cr.has(this.deathClip)) this.deathClip = fwd > 0.3 ? 'die_fwd' : 'die_back';
+      const back = this.deathClip === 'die_back' || this.deathClip === 'die_slip';
+      const L_ = this.level, reach = this.deathClip === 'die_crouch' ? 1.4 : 1.9, room = (yaw) => { const d = V3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(back ? -1 : 1); return [0.25, 0.6, 0.85].every(h => !L_.ray(V3(this.pos.x, h, this.pos.z), d, reach)) && !L_.blockedAt(this.pos.x + d.x * reach * 0.7, this.pos.z + d.z * reach * 0.7, 0.3); };
+      this.deathYaw = this.yaw;
+      for (const off of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, Math.PI]) { if (room(this.yaw + off)) { this.deathYaw = this.yaw + off; break; } }
+      if (this.cr) { this.group.rotation.y = this.deathYaw; this.cr.full(this.deathClip, this.crouch > 0.3 ? 0.3 : 0.12, true); this.glint.visible = false; if (this.cone) this.cone.visible = false; }
       NR.bus.emit('enemyDown', { enemy: this, head });
     }
     update(dt, P) {
@@ -82649,7 +83012,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
         const see = L.los(this.eye, pChest) || L.los(this.eye, pHead);
         aiming = true;
         if (see && this.flinch <= 0) {
-          if (this.seenT <= 0) this.aimT = Math.max(this.aimT, 0.75 + Math.random() * 0.45); // reaction delay after losing sight
+          if (this.seenT <= 0) this.aimT = Math.max(this.aimT, 0.75 + Math.random() * 0.45 + (P.drawn ? 0 : 0.35)); // a holstered man gets a beat longer // reaction delay after losing sight
           this.seenT = 2.5; this.lastSeen = pChest.clone();
           this.aimT -= dt; glint = this.aimT < 0.42;
           if (this.aimT <= 0) { this.fire(P, dist); this.shots--; this.aimT = 0.6 + Math.random() * 0.4; if (this.shots <= 0) { this.backToCover(); } }
@@ -82700,10 +83063,11 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
           else { low = 'walk'; ts = -sp / r.speedOf('walk'); }
         } else if (this.crouch > 0.5) low = 'crouch';
         if (this.lastState === 'melee') { r.layerName.L = ''; r.layerName.U = ''; }
-        r.play('L', low, 0.22, false, ts);
+        const fadeL = (low === 'crouch') !== (r.layerName.L === 'crouch') ? 0.35 : 0.22; // crouch <-> stand blends over 0.35 s
+        r.play('L', low, fadeL, false, ts);
         let up = low;
         if (alerted && k !== 'none') up = aiming && r.has('aim_' + k) ? 'aim_' + k : 'hold_' + k;
-        r.play('U', up, 0.2, false, up === low ? ts : 1);
+        r.play('U', up, fadeL > 0.3 ? 0.35 : 0.2, false, up === low ? ts : 1);
       }
       this.lastState = this.state;
       r.update(dt);
@@ -82713,6 +83077,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
         r.bend(r.bones.chest, ax, -pitch * 0.85);
       }
       if (this.flinch > 0) r.bend(r.bones.head, V3(0, 1, 0), Math.sin(this.t * 40) * 0.06);
+      if (this.state !== 'melee') r.footLock(dt, r.layerName.L === 'run' || r.layerName.L === 'walk' || r.layerName.L === 'idle', 0, r.layerName.L === 'idle' ? 0.16 : 0.6);
       r.lod(Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) > 13);
       if (this.cone && r.lampTip) { // the flashlight beam follows the lamp in his hand
         const tip = r.lampTip.getWorldPosition(V3(0, 0, 0)), hand = r.bones.handL.getWorldPosition(V3(0, 0, 0));
@@ -82767,6 +83132,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const fb = corpseBlocks(level, pos, yaw); fb.group.visible = false;
     const show = (tpl) => {
       if (!g.parent || !tpl) return;
+      // he lies under the alley's work light: a darker, rougher wet coat so the spot does not blow him out to yellow
+      if (!tpl.milesTuned) { tpl.milesTuned = true; for (const m of tpl.mats) m.color.setRGB(0.34, 0.33, 0.35); }
       const r = new NR.cast.Rig(tpl, 'miles'); r.full('dead_pose', 0, true); r.update(2); r.lod(false);
       g.add(r.root); g.rotation.y = yaw; g.position.copy(pos); g.updateMatrixWorld(true);
       const h = r.bones.hips.getWorldPosition(V3(0, 0, 0)); g.position.x += pos.x - h.x; g.position.z += pos.z - h.z; g.updateMatrixWorld(true);
@@ -82785,17 +83152,17 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   function corpseBlocks(level, pos, yaw) { const f = buildFigure(STYLES.corpse); f.group.position.copy(pos); f.group.rotation.set(-Math.PI / 2 + 0.05, yaw, 0, 'YXZ'); f.group.position.y = 0.14; f.arm.rotation.x = 0.4; level.scene.add(f.group); return f; }
 
   if (NR.cast) setTimeout(() => NR.cast.preload(), 300); // fetch the cast while the title is up
-  NR.actors = { Painted, Model3D, character, loadGLB, MODELS, Enemy, spawn, clear, corpse, buildFigure, preload, get enemies() { return Enemy.all; } };
+  NR.actors = { Painted, Walker, loadAnim, Model3D, character, loadGLB, MODELS, Enemy, spawn, clear, corpse, buildFigure, preload, get enemies() { return Enemy.all; } };
 })();
 
 </script>
 <script>/* player.js */
-// NEON RAIN player: first-person movement and look, revolver (6 shots, reload, head shots, light aim assist on touch),
+// NEON RAIN player: first-person movement and look, .45 pistol (7 + 1, spare magazines, slide lock, head shots, light aim assist on touch),
 // health (red screen edges, recovery in cover, 3 lives), cigarettes (FOCUS slow-mo / THINK / OFFER), SCAN, INTERACT.
 (function () {
   const T = THREE, C = NR.cfg, V3 = (x, y, z) => new T.Vector3(x, y, z);
   const P = NR.player = {
-    pos: V3(0, 0, 0), yaw: 0, pitch: 0, vel: V3(0, 0, 0), hp: C.HP, lives: C.LIVES, rounds: C.GUN_ROUNDS, armed: false,
+    pos: V3(0, 0, 0), yaw: 0, pitch: 0, vel: V3(0, 0, 0), hp: C.HP, lives: C.LIVES, rounds: C.GUN_ROUNDS, drawn: false, drawT: 0, drawDur: 0, mags: C.MAGS_START, slideLock: false, reloadDur: C.GUN_RELOAD, reloadEmpty: false, armed: false,
     reloadT: 0, fireCd: 0, pack: C.PACK_START, litT: 0, focusT: 0, scanning: false, moving: false, lastHitT: 99, recoil: 0, bob: 0,
     shots: 0, hits: 0, heads: 0, smoked: 0, god: false, inCover: false, focus: 0, controlled: false, lookLock: null,
   };
@@ -82808,10 +83175,11 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   // ---------------------------------------------------------------- view models (rendered in their own pass, no wall clipping)
   const vm = { scene: new T.Scene() };
   // warm practicals only: amber incandescent key, sodium fill, teal neon rim (no red: the grade keeps reds as blood)
-  vm.scene.add(new T.HemisphereLight(0xc8ae98, 0x2a1408, 1.5));
-  const vmKey = new T.DirectionalLight(0xffd8b0, 2.3); vmKey.position.set(-0.6, 1.6, 0.9); vm.scene.add(vmKey);
-  const vmRim = new T.DirectionalLight(0x2ad0c0, 1.0); vmRim.position.set(1.2, 0.4, -1); vm.scene.add(vmRim);
-  const vmRed = new T.DirectionalLight(0xff7a30, 0.3); vmRed.position.set(-1.2, 0.2, -0.8); vm.scene.add(vmRed);
+  vm.scene.add(new T.HemisphereLight(0xc8ae98, 0x2a1408, 2.2));
+  const vmKey = new T.DirectionalLight(0xffd8b0, 3.4); vmKey.position.set(-0.6, 1.6, 0.9); vm.scene.add(vmKey);
+  const vmRim = new T.DirectionalLight(0x2ad0c0, 1.8); vmRim.position.set(1.2, 0.5, -1); vm.scene.add(vmRim); // teal neon rim
+  const vmSpec = new T.DirectionalLight(0xffd0a0, 0.9); vmSpec.position.set(0.15, 1.0, -1.6); vm.scene.add(vmSpec); // front-top: spec streak along the slide
+  const vmRed = new T.DirectionalLight(0xff9a50, 1.1); vmRed.position.set(-1.2, 0.6, -1.0); vm.scene.add(vmRed);
   { // tiny warm environment for the blued steel's reflections (PMREM of a dark room with an amber lamp and neon strips)
     const es = new T.Scene(); es.background = new T.Color(0x0a0705);
     const strip = (c, w, h, x, y, z) => { const m = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshBasicMaterial({ color: c, side: T.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); es.add(m); };
@@ -82837,34 +83205,186 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const CIG_HOME = V3(-0.06, -0.085, -0.26);
   cigRig.position.copy(CIG_HOME); cigRig.rotation.set(0.1, 0.4, 0.2); cigRig.scale.setScalar(0.6); cigRig.visible = false;
   vm.scene.visible = true; NR.core.vm = vm; P.vm = vm;
+  // vm.anim('draw' | 'holster'): hook for the modelled view-model animations (set vm.onAnim to play them)
+  vm.anim = (name) => { NR.bus.emit('vmAnim', { name }); if (vm.onAnim) { try { vm.onAnim(name); } catch (e) { console.error(e); } } };
+  // GUN: draw (0.45 s) / holster (0.4 s); holstered is the default, and every cutscene holsters
+  P.toggleGun = () => { if (!P.armed || P.drawT > 0 || P.reloadT > 0) return; P.drawn = !P.drawn; P.drawDur = P.drawT = P.drawn ? 0.45 : 0.4; vm.anim(P.drawn ? 'draw' : 'holster'); NR.bus.emit(P.drawn ? 'draw' : 'holster'); };
+  P.holster = () => { P.drawn = false; P.drawT = 0; };
 
-  // modelled viewmodel (tools/env/viewmodel.py): revolver in a gloved right hand, cigarette in the left. Code models above
+  // modelled viewmodel (tools/env/viewmodel.py): 1911-pattern .45 in the right hand, cigarette in the left. Code models above
   // stay as the fallback until the GLB arrives.
-  const vmp = { drum: gun.userData.drum, axis: 'y', crane: null };
-  const VM_GUN = { pos: V3(0.036, -0.098, -0.26), rot: V3(0.08, 0.26, 0.16) }, VM_CIG = { pos: V3(-0.06, -0.125, -0.27), rot: V3(0.6, -0.45, 0.35) };
-  if (NR.gltf) NR.fx.vmAsset = NR.gltf.load(NR.ASSET + 'models/vm_revolver.glb').then(({ scene }) => {
-    const N = k => scene.getObjectByName(k), rigR = N('rig_r'), rigL = N('rig_l'), muz = N('muzzle'), drum = N('cylinder'), crane = N('crane'), tip = N('cig_tip');
+  const vmp = { drum: gun.userData.drum, slide: null, fireT: 9, casings: [], manualReload: 0, forceLock: false };
+  const VM_GUN = { pos: V3(0.068, -0.108, -0.37), rot: V3(0.05, 0.1, 0.1) }, VM_CIG = { pos: V3(-0.06, -0.125, -0.27), rot: V3(0.6, -0.45, 0.35) };
+  if (NR.gltf) NR.fx.vmAsset = NR.gltf.load(NR.ASSET + 'models/vm_1911.glb').then(({ scene }) => {
+    const N = k => scene.getObjectByName(k), rigR = N('rig_r'), rigL = N('rig_l'), muz = N('muzzle'), slide = N('slide'), mag = N('magazine'), hammer = N('hammer'), eject = N('eject'), casing = N('casing'), tip = N('cig_tip');
     const lefts = { cig: N('hand_l'), cup: N('hand_l_cup'), relax: N('hand_l_relax') }, cigNode = N('cig');
     // left-hand pose variants: 'cig' (between index and middle), 'cup' (shielding a match), 'relax' (empty)
     P.setLeftHand = (k) => { for (const n in lefts) if (lefts[n]) lefts[n].visible = n === k; if (cigNode) cigNode.visible = k === 'cig'; P.leftPose = k; };
     P.setLeftHand('cig');
-    if (!rigR || !rigL || !muz || !drum || !crane || !tip) throw new Error('vm_revolver.glb: rigs missing');
-    scene.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; if (o.material.metalness > 0.5) o.material.envMapIntensity = 2.6; } });
-    if (NR.fx.useRevolverAsset) NR.fx.useRevolverAsset(N('revolver')); // desk revolver uses the same model
+    if (!rigR || !rigL || !muz || !slide || !mag || !hammer || !eject || !casing || !tip) throw new Error('vm_1911.glb: nodes missing');
+    scene.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; const mn = o.material.name || ''; if (/steel/.test(mn)) { o.material.roughness = 0.36; o.material.envMapIntensity = 2.4; } else if (/brass/.test(mn)) { o.material.envMapIntensity = 3; o.material.roughness = 0.28; o.material.emissive.setHex(0x2a1604); } else if (o.material.metalness > 0.5) o.material.envMapIntensity = 2.6; } });
+    if (NR.fx.useRevolverAsset) NR.fx.useRevolverAsset(N('pistol')); // the desk pistol uses the same model
     // gun: full scale, lower right
     gun.visible = false; sleeve.visible = false; glove.visible = false;
     gunRig.scale.setScalar(1); GUN_HOME.copy(VM_GUN.pos); gunRig.add(rigR); rigR.rotation.set(VM_GUN.rot.x, VM_GUN.rot.y, VM_GUN.rot.z);
     muz.add(flashSpr); flashSpr.position.set(0, 0, -0.01); flashSpr.scale.setScalar(0.12);
-    vmp.drum = drum; vmp.axis = 'z'; vmp.crane = crane;
+    Object.assign(vmp, { slide, mag, hammer, eject, slideZ: slide.position.z, magPos: mag.position.clone() });
+    casing.parent.remove(casing); casing.position.set(0, 0, 0);
+    for (let i = 0; i < 4; i++) { const c = casing.clone(true); c.visible = false; vm.scene.add(c); vmp.casings.push({ o: c, v: V3(0, 0, 0), w: V3(0, 0, 0), t: 0 }); }
     // cigarette hand: lower left, ember + smoke on the modelled tip
     hand.visible = false; sleeve2.visible = false; cig.visible = false; ember.visible = false;
     cigRig.scale.setScalar(1); cigRig.rotation.set(0, 0, 0); CIG_HOME.copy(VM_CIG.pos); cigRig.add(rigL); rigL.rotation.set(VM_CIG.rot.x, VM_CIG.rot.y, VM_CIG.rot.z);
+    vmp.rigL = rigL; vmp.rigLRest = rigL.quaternion.clone(); vmp.tip = tip; tip.add(emberLight);
+    vmp.filterLocal = tip.position.clone().addScaledVector(V3(0, 0.912, -0.41), -0.083); // filter end of the cigarette in rig space
+    LIPS.pos.copy(LIPS.at).sub(vmp.filterLocal.clone().applyQuaternion(LIPS.q));
     tip.add(emberGlow); emberGlow.position.set(0, 0, 0); emberGlow.scale.setScalar(0.034);
     // ember: a small orange-red tip kept under the grade's halation threshold (no star/plus artefact), soft glow around it
-    scene.traverse(o => { if (o.isMesh && /ember/.test(o.material.name)) { o.material = new T.MeshBasicMaterial({ color: new T.Color(0.82, 0.24, 0.05) }); } });
+    scene.traverse(o => { if (o.isMesh && /ember/.test(o.material.name)) { o.material = vmp.emberMat = new T.MeshBasicMaterial({ color: new T.Color(0.82, 0.24, 0.05) }); } });
     tip.add(cigSmoke); cigSmoke.position.set(-0.087, -0.05, 0.02);
     P.vmGLB = true;
   }).catch(e => console.warn('[vm glb]', e));
+
+  // 1911 animation: slide cycles on each shot and ejects a casing to the right; slide locks back on the last round; reload
+  // drops the magazine, inserts a fresh one and drops the slide. Driven by the 'shot' event, P.rounds, P.slideLock, P.reloadT.
+  const MAG_DOWN = V3(0, -0.985, 0.17), SLIDE_TRAVEL = 0.024, _ew = V3(0, 0, 0);
+  function ejectCasing() {
+    if (!vmp.casings.length) return; const c = vmp.casings.find(k => k.t <= 0) || vmp.casings[0];
+    vmp.eject.getWorldPosition(_ew); c.o.position.copy(_ew); c.o.visible = true; c.t = 0.75;
+    c.v.set(-0.08 + Math.random() * 0.08, 1.25 + Math.random() * 0.25, 0.05 + Math.random() * 0.06); c.o.scale.setScalar(2.0); c.o.rotation.set(0, 0, 0); c.w.set((Math.random() - 0.5) * 6, 8 + Math.random() * 4, (Math.random() - 0.5) * 4); // up and over the slide: stays on a portrait screen
+  }
+  NR.bus.on('shot', () => { if (!vmp.slide) return; vmp.fireT = 0; vmp.ejectPending = true; });
+  function animPistol(rdt) {
+    vmp.fireT += rdt;
+    const empty = vmp.forceLock || (P.slideLock !== undefined ? !!P.slideLock : P.rounds <= 0);
+    const dur = P.reloadDur || C.GUN_RELOAD;
+    if (vmp.manualReload > 0) vmp.manualReload -= rdt;
+    const rt = P.reloadT > 0 ? P.reloadT : vmp.manualReload;
+    const f = rt > 0 ? 1 - rt / dur : -1; // reload progress 0..1
+    let s = 0; const t = vmp.fireT;
+    if (t < 0.045) s = t / 0.045; else if (t < 0.12) s = 1 - (t - 0.045) / 0.075;
+    if (vmp.ejectPending && t > 0.03) { vmp.ejectPending = false; ejectCasing(); }
+    if (empty && t >= 0.045) s = 1;                  // slide stays back on the last round
+    if (f >= 0 && f < 0.8 && (empty || vmp.lockedAtReload)) { s = 1; vmp.lockedAtReload = true; }
+    if (f >= 0.8 && vmp.lockedAtReload) s = Math.max(0, 1 - (f - 0.8) / 0.04); // slide release snaps it home
+    if (f < 0) { vmp.lockedAtReload = false; if (vmp.forceLock && vmp.manualReload <= 0 && vmp.reloadDone) vmp.forceLock = false; }
+    vmp.slide.position.z = vmp.slideZ + s * SLIDE_TRAVEL;
+    vmp.hammer.rotation.x = -0.15 * s;
+    // magazine: out (0..0.22), gone (..0.45), in (..0.72)
+    let d = 0, vis = true;
+    if (f >= 0) { if (f < 0.22) d = Math.pow(f / 0.22, 2) * 0.2; else if (f < 0.45) vis = false; else if (f < 0.72) d = Math.pow(1 - (f - 0.45) / 0.27, 2) * 0.14; }
+    vmp.mag.visible = vis; vmp.mag.position.copy(vmp.magPos).addScaledVector(MAG_DOWN, d);
+    if (f >= 0.8) vmp.reloadDone = true;
+    for (const c of vmp.casings) if (c.t > 0) {
+      c.t -= rdt; c.v.y -= 6.5 * rdt; c.o.position.addScaledVector(c.v, rdt); c.o.rotation.x += c.w.x * rdt; c.o.rotation.y += c.w.y * rdt; c.o.rotation.z += c.w.z * rdt;
+      if (c.t <= 0) c.o.visible = false;
+    }
+  }
+  // test / director hook: P.vm.anim('fire' | 'lastShot' | 'reload' | 'idle')
+  vm.anim = (name) => {
+    if (!vmp.slide) return false;
+    if (name === 'fire' || name === 'lastShot') { vmp.fireT = 0; vmp.ejectPending = true; P.recoil = Math.min(1.2, P.recoil + 1); flashSpr.visible = true; vmFlash.intensity = 6; flashT = 0.05; if (name === 'lastShot') { vmp.forceLock = true; vmp.reloadDone = false; } }
+    else if (name === 'reload') { vmp.manualReload = P.reloadDur || C.GUN_RELOAD; vmp.reloadDone = false; }
+    else if (name === 'idle') { vmp.fireT = 9; vmp.forceLock = false; vmp.manualReload = 0; }
+    return true;
+  };
+
+  // ---- smoking + holster layer: P.vm.anim('draw' | 'holster' | 'drag' | 'idleSmoke'); state flags P.vm.drawn, P.vm.busy.
+  // The toggle that calls draw/holster belongs to the game logic; P.vm.cigDefault keeps the lit cigarette in the left hand.
+  const vs = vm.state = { drawT: P.drawn ? 1 : 0, drawFrom: 0, drawTo: P.drawn ? 1 : 0, drawDur: 0.45, drawClock: 9, dragT: -1, boost: 0 };
+  vm.drawn = !!P.drawn; vm.busy = false; vm.cigDefault = true;
+  // drag fx: warm ember light, a screen-bottom glow + vignette overlay, a paper crackle, and an exhale plume of soft sprites
+  const emberLight = new T.PointLight(0xff7020, 0, 0.7, 2);
+  const glowOv = document.createElement('div');
+  Object.assign(glowOv.style, { position: 'absolute', pointerEvents: 'none', opacity: '0', zIndex: '1',
+    background: 'radial-gradient(ellipse 75% 40% at 50% 104%, rgba(255,128,40,0.62), rgba(255,96,24,0.16) 55%, rgba(0,0,0,0) 78%), radial-gradient(ellipse 80% 70% at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.6) 100%)' });
+  { const ui = document.getElementById('ui'); (ui ? ui.parentNode : document.body).insertBefore(glowOv, ui || null); }
+  let ac = null;
+  function crackle(dur) { // tobacco/paper crackle: sparse filtered clicks over a soft hiss
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume();
+      const n = Math.floor(ac.sampleRate * dur), buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * 0.05 * Math.sin(Math.PI * i / n);
+      for (let k = 0; k < 70; k++) { const at = Math.floor(Math.random() * (n - 400)), a = 0.4 + Math.random() * 0.6; for (let j = 0; j < 300; j++) d[at + j] += (Math.random() * 2 - 1) * a * Math.exp(-j / 40); }
+      const src = ac.createBufferSource(); src.buffer = buf; const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 3200; f.Q.value = 0.6;
+      const g = ac.createGain(); g.gain.value = 0.32 * ((NR.core.settings.sfx == null) ? 0.8 : NR.core.settings.sfx);
+      src.connect(f); f.connect(g); g.connect(ac.destination); src.start();
+    } catch (e) { /* audio is optional */ }
+  }
+  const puffTex = NR.fx.canvasTex(64, 64, (g, w, h) => { const r = g.createRadialGradient(32, 32, 2, 32, 32, 31); r.addColorStop(0, 'rgba(255,255,255,0.9)'); r.addColorStop(0.45, 'rgba(255,255,255,0.35)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(0,0,0,${Math.random() * 0.12})`; g.beginPath(); g.arc(Math.random() * 64, Math.random() * 64, 2 + Math.random() * 7, 0, 7); g.fill(); } });
+  const puffs = [];
+  for (let i = 0; i < 34; i++) { const sp = new T.Sprite(new T.SpriteMaterial({ map: puffTex, color: 0xb8b2aa, transparent: true, depthTest: false, depthWrite: false, opacity: 0 })); sp.visible = false; sp.renderOrder = 20; vm.scene.add(sp); puffs.push({ sp, v: V3(0, 0, 0), t: 0, life: 1, s0: 0.03, s1: 0.2, a: 0.3 }); }
+  function puff(wisp) {
+    const p = puffs.find(q => q.t <= 0); if (!p) return;
+    p.t = p.life = wisp ? 0.9 + Math.random() * 0.4 : 1.4 + Math.random() * 0.5;
+    p.sp.position.set((Math.random() - 0.5) * 0.02, -0.088, -0.16 - Math.random() * 0.02);
+    p.v.set(0.012 + Math.random() * 0.02 + (wisp ? (Math.random() - 0.3) * 0.05 : 0), wisp ? 0.11 + Math.random() * 0.05 : 0.07 + Math.random() * 0.04, -0.05 - Math.random() * 0.04);
+    p.s0 = wisp ? 0.012 : 0.03; p.s1 = wisp ? 0.07 : 0.2 + Math.random() * 0.08; p.a = wisp ? 0.18 : 0.22; p.sp.material.rotation = Math.random() * 6.28; p.sp.visible = true;
+  }
+  function updatePuffs(rdt) {
+    for (const p of puffs) { if (p.t <= 0) continue; p.t -= rdt; const k = 1 - p.t / p.life;
+      p.sp.position.addScaledVector(p.v, rdt); p.v.y *= 1 - rdt * 0.6; p.v.z *= 1 - rdt * 0.8;
+      const sc = p.s0 + (p.s1 - p.s0) * Math.sqrt(k); p.sp.scale.set(sc, sc, 1); p.sp.material.rotation += rdt * 0.25;
+      p.sp.material.opacity = p.a * Math.min(1, k / 0.12) * (1 - k) * (1 - k * 0.3); if (p.t <= 0) p.sp.visible = false; }
+  }
+  const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const easeOutBack = t => { const c = 1.4; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  const animGun = vm.anim;
+  vm.anim = (name) => {
+    if (name === 'draw' || name === 'holster') {
+      const to = name === 'draw' ? 1 : 0; if (vs.drawTo === to) return true;
+      vs.drawFrom = vs.drawT; vs.drawTo = to; vs.drawDur = to ? 0.45 : 0.4; vs.drawClock = 0; vm.drawn = !!to; vm.busy = true;
+      if (P.drawn !== !!to) { P.drawn = !!to; P.drawDur = P.drawT = vs.drawDur; } // called directly (tests/director), not via P.toggleGun
+      return true;
+    }
+    if (name === 'drag') { vs.dragT = 0; vm.busy = true; return true; }
+    if (name === 'idleSmoke') { vs.dragT = -1; vm.cigDefault = true; return true; }
+    return animGun(name);
+  };
+  // drag pose: palm to the face, filter end at the lips just below the lens, lit end pointing away; hand partly below the frame
+  const LIPS = { at: V3(0.01, -0.088, -0.075), pos: V3(0.016, -0.163, -0.1), q: new T.Quaternion().setFromEuler(new T.Euler(-1.35, 0.1, Math.PI / 2 + 0.25, 'ZYX')) }, EDGE = V3(-0.035, -0.035, 0), _q = new T.Quaternion();
+  function animSmoke(rdt, live) {
+    // draw / holster: the right hand drops under the coat to the hip holster and comes back up with the pistol
+    if (vs.drawClock < vs.drawDur) {
+      vs.drawClock += rdt; const k = Math.min(1, vs.drawClock / vs.drawDur);
+      vs.drawT = vs.drawTo ? vs.drawFrom + (1 - vs.drawFrom) * easeOutBack(k) : vs.drawFrom * (1 - ease(k));
+    }
+    const dh = 1 - Math.min(1, Math.max(0, vs.drawT));
+    gunRig.visible = gunRig.visible && dh < 0.85;
+    gunRig.position.x += dh * 0.06; gunRig.position.y -= dh * 0.34; gunRig.position.z -= dh * 0.04; // down and away: the coat sleeve never swings into the lens
+    gunRig.rotation.x -= dh * 0.55; gunRig.rotation.z -= dh * 0.35;
+    // drag (0-0.5 raise, 0.5-1.4 hold: ember flares + crackle, 1.4-1.9 lower, 1.9-3.5 exhale plume from the bottom of the screen)
+    let dk = 0, idleOn = 1; vs.boost = 0;
+    if (vs.dragT >= 0) {
+      const t0 = vs.dragT, t = (vs.dragT += rdt);
+      dk = t < 0.5 ? ease(t / 0.5) : t < 1.4 ? 1 : t < 1.9 ? 1 - ease((t - 1.4) / 0.5) : 0;
+      vs.boost = t > 0.45 && t < 1.45 ? Math.pow(Math.sin(Math.min(1, (t - 0.45) / 1.0) * Math.PI), 0.7) : 0;
+      if (t0 < 0.5 && t >= 0.5) { crackle(0.9); if (NR.audio && NR.audio.fx && NR.audio.fx.inhale) NR.audio.fx.inhale(); }
+      if (t > 1.9 && t < 2.65) { vs.puffClock = (vs.puffClock || 0) + rdt; while (vs.puffClock > 0.03) { vs.puffClock -= 0.03; puff(Math.random() < 0.3); } }
+      idleOn = t < 0.4 ? 1 - t / 0.4 : t < 3.0 ? 0 : Math.min(1, (t - 3.0) / 0.5);
+      if (t > 3.6) { vs.dragT = -1; vs.puffClock = 0; }
+    }
+    updatePuffs(rdt);
+    cigSmoke.material.uniforms.on.value = idleOn;
+    emberLight.intensity = 0.05 * vs.boost;
+    if (vs.boost > 0.01 || glowOv.style.opacity !== '0') { const v = NR.core.view; if (v) Object.assign(glowOv.style, { left: v.left + 'px', top: v.top + 'px', width: v.w + 'px', height: v.h + 'px' }); glowOv.style.opacity = (0.85 * vs.boost).toFixed(3); }
+    if (!P.controlled && dk > 0) NR.core.camera.rotation.x -= 0.07 * dk; // the head dips ~4 degrees to meet the hand
+    vm.busy = vs.drawClock < vs.drawDur || vs.dragT >= 0; vm.drawn = !!P.drawn;
+    if (!P.armed && vs.drawT > 0 && vs.drawClock >= vs.drawDur) { vs.drawT = 0; vs.drawTo = 0; } // disarmed by the story
+    const lit = !!(P.litT > 0 || P.focusT > 0 || P.forceCig);
+    const show = (lit && (live || P.forceCig)) || (vm.cigDefault && P.vmGLB && live) || dk > 0;
+    cigRig.visible = show;
+    if (!show) return;
+    const gunUp = gunRig.visible ? Math.min(1, vs.drawT) : 0, t = NR.core.time, k = P.focusT > 0 ? 0.04 : 0;
+    cigRig.position.set(CIG_HOME.x + EDGE.x * gunUp + Math.sin(t * 0.5) * 0.003, CIG_HOME.y + EDGE.y * gunUp + k + Math.sin(P.bob * 0.5 + 1) * 0.006 + Math.sin(t * 0.8) * 0.002, CIG_HOME.z);
+    if (P.vmGLB && vmp.rigL) {
+      cigRig.position.lerp(LIPS.pos, dk); cigRig.rotation.set(0, 0, Math.sin(t * 0.7) * 0.02 * (1 - dk));
+      _q.copy(vmp.rigLRest).slerp(LIPS.q, dk); vmp.rigL.quaternion.copy(_q);
+    }
+    emberGlow.material.opacity = Math.min(1, 0.26 + Math.sin(t * 9) * 0.08 + vs.boost * 0.55);
+    if (P.vmGLB) emberGlow.scale.setScalar(0.034 * (1 + 0.8 * vs.boost));
+    if (vmp.emberMat) vmp.emberMat.color.setRGB(0.82 + 0.18 * vs.boost, 0.24 + 0.36 * vs.boost, 0.05 + 0.12 * vs.boost);
+  }
 
   // ---------------------------------------------------------------- combat helpers
   function enemiesAlert() { return NR.actors.enemies.some(e => !e.dead && e.state !== 'dormant' && e.state !== 'idle'); }
@@ -82886,8 +83406,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   }
   P.assistTarget = assistTarget;
   function shoot() {
-    if (!P.armed || P.reloadT > 0 || P.fireCd > 0) return;
-    if (P.rounds <= 0) { NR.bus.emit('dryFire'); P.fireCd = 0.3; startReload(); return; }
+    if (!P.armed || !P.drawn || P.drawT > 0 || P.reloadT > 0 || P.fireCd > 0) return;
+    if (P.rounds <= 0) { NR.bus.emit('dryFire'); P.fireCd = 0.28; P.slideLock = true; return; } // slide locked back: click, then RELOAD is prompted
     P.rounds--; P.fireCd = C.GUN_RATE; P.shots++;
     const o = P.eye(); let d = fwd();
     const focus = P.focusT > 0;
@@ -82908,15 +83428,22 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     }
     // any shot alerts every enemy who can hear it
     for (const e of NR.actors.enemies) if (!e.dead && e.state === 'idle') e.alert();
-    P.recoil = Math.min(1.2, P.recoil + (focus ? 0.45 : 1));
-    P.pitch += (focus ? 0.012 : 0.035); P.yaw += (Math.random() - 0.5) * (focus ? 0.004 : 0.016);
+    P.recoil = Math.min(1.4, P.recoil + (focus ? 0.5 : 1.1));
+    P.pitch += (focus ? 0.018 : 0.05); P.yaw += (Math.random() - 0.5) * (focus ? 0.005 : 0.02); // .45: stronger muzzle rise
     NR.fx.muzzle(o.clone().addScaledVector(d, 0.6), 1); vmFlash.intensity = 6; flashSpr.visible = true; flashT = 0.05;
     NR.core.shake(0.012, 0.08);
+    if (P.rounds === 0) { P.slideLock = true; NR.bus.emit('slideLock'); }
     NR.bus.emit('shot', { rounds: P.rounds });
-    if (P.rounds === 0) setTimeout(() => { if (P.rounds === 0 && P.reloadT <= 0) startReload(); }, 380);
   }
   let flashT = 0;
-  function startReload() { if (!P.armed || P.reloadT > 0 || P.rounds >= C.GUN_ROUNDS) return; P.reloadT = C.GUN_RELOAD; NR.bus.emit('reload'); }
+  function startReload() {
+    if (!P.armed || !P.drawn || P.drawT > 0 || P.reloadT > 0 || P.rounds >= C.GUN_MAG + 1) return;
+    if (P.mags <= 0) { NR.bus.emit('noMags'); return; }
+    P.reloadEmpty = P.rounds === 0; P.reloadDur = P.reloadEmpty ? C.GUN_RELOAD_EMPTY : C.GUN_RELOAD; P.reloadT = P.reloadDur;
+    NR.bus.emit('reload', { empty: P.reloadEmpty, dur: P.reloadDur });
+  }
+  // spare magazines come off the men you drop (always one when you have none)
+  NR.bus.on('enemyDown', () => { if (P.mags < C.MAGS_MAX && (P.mags === 0 || Math.random() < 0.45)) { P.mags++; NR.bus.emit('magPickup', { mags: P.mags }); } });
   P.reload = startReload;
   function smoke() {
     if (P.pack <= 0) { NR.bus.emit('noSmokes'); return false; }
@@ -82954,8 +83481,9 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     P.bob += rdt * (P.moving ? 9 : 0) * mag;
     // weapon
     P.fireCd = Math.max(0, P.fireCd - rdt);
-    if (playing && P.armed) { if (input.fire) shoot(); if (input.reload) startReload(); }
-    if (P.reloadT > 0) { P.reloadT -= rdt; if (P.reloadT <= 0) { P.rounds = C.GUN_ROUNDS; NR.bus.emit('reloaded'); } }
+    if (playing && P.armed) { if (input.gun) P.toggleGun(); if (input.fire) shoot(); if (input.reload) startReload(); }
+    if (P.drawT > 0) P.drawT = Math.max(0, P.drawT - rdt);
+    if (P.reloadT > 0) { P.reloadT -= rdt; if (P.reloadT <= 0) { P.rounds = C.GUN_MAG + (P.reloadEmpty ? 0 : 1); P.mags--; P.slideLock = false; NR.bus.emit('reloaded', { rounds: P.rounds }); } } // 7+1 keeps the chambered round; from empty, 7
     P.recoil = Math.max(0, P.recoil - rdt * 3.2);
     if (playing && input.smoke) smoke();
     // cigarette + focus (real time)
@@ -82978,23 +83506,18 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     // camera
     if (!P.controlled) { cam.position.set(P.pos.x, P.pos.y + C.EYE + Math.sin(P.bob) * 0.025, P.pos.z); cam.rotation.set(P.pitch + P.recoil * 0.02, P.yaw, 0); }
     // view models
-    const live = NR.core.state === 'PLAY' || NR.core.state === 'DOWN'; gunRig.visible = P.armed && !P.hideGun && live;
-    const rel = P.reloadT > 0 ? Math.sin(Math.PI * (1 - P.reloadT / C.GUN_RELOAD)) : 0;
-    gunRig.position.set(GUN_HOME.x + Math.sin(P.bob * 0.5) * 0.008 - rel * 0.06, GUN_HOME.y + Math.abs(Math.cos(P.bob * 0.5)) * 0.008 - rel * 0.05 + P.recoil * 0.015, GUN_HOME.z + P.recoil * 0.04);
-    if (vmp.crane) { // modelled gun: roll left, swing the cylinder out on the crane, spin it, swing it home
-      gunRig.rotation.set(P.recoil * 0.3 + rel * 0.35, P.vmGLB ? 0 : 0.1, rel * 0.75);
-      vmp.crane.rotation.z = Math.min(1, rel * 1.8) * 1.3;
-      vmp.drum.rotation.z += rel > 0.3 ? rdt * 16 : 0;
-    } else {
+    const live = NR.core.state === 'PLAY' || NR.core.state === 'DOWN'; gunRig.visible = P.armed && !P.hideGun && live && (P.drawn || P.drawT > 0);
+    const dk = P.drawT > 0 ? (P.drawn ? 1 - P.drawT / P.drawDur : P.drawT / P.drawDur) : 1; // 0 = down out of frame, 1 = up
+    const rel = P.reloadT > 0 ? Math.sin(Math.PI * (1 - P.reloadT / P.reloadDur)) : 0;
+    gunRig.position.set(GUN_HOME.x + Math.sin(P.bob * 0.5) * 0.008 - rel * (vmp.slide ? 0.045 : 0.06), GUN_HOME.y + Math.abs(Math.cos(P.bob * 0.5)) * 0.008 + rel * (vmp.slide ? 0.02 : -0.05) + P.recoil * 0.015, GUN_HOME.z + P.recoil * 0.04 + rel * (vmp.slide ? 0.02 : 0));
+    if (vmp.slide) { gunRig.rotation.set(P.recoil * 0.3 + rel * 0.2, rel * 0.25, -rel * 0.65); animPistol(rdt); } else { // (1911 reload: low, muzzle up-left, magwell toward the camera)
       gunRig.rotation.set(P.recoil * 0.22 + rel * 0.5, 0.1, rel * 0.9);
       vmp.drum.rotation.y += rel > 0.1 ? rdt * 18 : 0;
     }
     flashT -= rdt; if (flashT <= 0) { flashSpr.visible = false; vmFlash.intensity = 0; }
-    const lit = !!(P.litT > 0 || P.focusT > 0 || P.forceCig);
-    cigRig.visible = lit && (live || P.forceCig);
-    if (lit) { const k = P.focusT > 0 ? 0.04 : 0; cigRig.position.set(CIG_HOME.x, CIG_HOME.y + k + Math.sin(P.bob * 0.5 + 1) * 0.006, CIG_HOME.z); emberGlow.material.opacity = 0.26 + Math.sin(NR.core.time * 9) * 0.08; }
+    animSmoke(rdt, live);
   };
-  P.reset = () => { P.rounds = C.GUN_ROUNDS; P.reloadT = 0; P.fireCd = 0; P.recoil = 0; P.litT = 0; P.focusT = 0; P.resetHealth(); };
+  P.reset = () => { P.rounds = C.GUN_ROUNDS; P.mags = Math.max(P.mags, C.MAGS_START); P.slideLock = false; P.reloadT = 0; P.fireCd = 0; P.recoil = 0; P.litT = 0; P.focusT = 0; P.resetHealth(); };
 })();
 
 </script>
@@ -83003,8 +83526,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 // RELOAD / SMOKE / SCAN / INTERACT on the right), plus WASD + mouse. Output: NR.controls.state, read once per frame.
 (function () {
   const C = NR.cfg, clamp = NR.clamp, DEAD = 0.1;
-  const state = { mx: 0, my: 0, lookX: 0, lookY: 0, fire: false, reload: false, scan: false, smoke: false, interact: false, caseFile: false, pause: false, any: false };
-  const pend = { reload: false, smoke: false, interact: false, caseFile: false, pause: false, any: false, lookX: 0, lookY: 0 };
+  const state = { mx: 0, my: 0, lookX: 0, lookY: 0, fire: false, gun: false, reload: false, scan: false, smoke: false, interact: false, caseFile: false, pause: false, any: false };
+  const pend = { gun: false, reload: false, smoke: false, interact: false, caseFile: false, pause: false, any: false, lookX: 0, lookY: 0 };
   let root = null, el = {}, shown = false, lastDevice = 'none', core = null;
   const L = { k: 1, R: 56, sx: 0, sy: 0, fx: 0, fy: 0, fr: 44, bx: 0, rr: 30, ry: 0, sy2: 0, cy: 0, iy: 0, ir: 36, w: 390, h: 844, top: 90 };
   function layout() {
@@ -83014,9 +83537,9 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     L.fx = L.sx + Math.round(14 * k); L.fy = L.sy - L.R - Math.round(30 * k) - L.fr;
     L.bx = w - Math.round(18 * k) - L.rr; L.ry = h - Math.round(30 * k) - sb - L.rr;
     L.smy = L.ry - Math.round(74 * k); L.scy = L.smy - Math.round(74 * k); L.iy = L.scy - Math.round(70 * k) - L.ir;
-    L.ix = w - Math.round(18 * k) - L.ir;
+    L.ix = w - Math.round(18 * k) - L.ir; L.gx = L.bx - Math.round(74 * k); L.gy = L.ry; // GUN: left of RELOAD
     if (!root) return;
-    place(el.fire, L.fx, L.fy, L.fr); place(el.reload, L.bx, L.ry, L.rr); place(el.smoke, L.bx, L.smy, L.rr); place(el.scan, L.bx, L.scy, L.rr); place(el.interact, L.ix, L.iy, L.ir);
+    place(el.fire, L.fx, L.fy, L.fr); place(el.reload, L.bx, L.ry, L.rr); place(el.smoke, L.bx, L.smy, L.rr); place(el.scan, L.bx, L.scy, L.rr); place(el.interact, L.ix, L.iy, L.ir); place(el.gun, L.gx, L.gy, L.rr);
     el.base.style.width = el.base.style.height = L.R * 2 + 'px'; el.knob.style.width = el.knob.style.height = Math.round(52 * k) + 'px';
     root.style.fontSize = Math.round(11 * k) + 'px';
     if (stick.id === null) stickHome();
@@ -83041,14 +83564,17 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 #nrc .interact{border-color:#e8c890;color:#fff1d6;box-shadow:0 0 14px rgba(232,200,144,.55);display:none;font-size:.95em}
 #nrc .interact.show{display:flex;animation:nrcPulse 1.2s infinite}
 #nrc .fire.empty{opacity:.55}
+#nrc .gun{flex-direction:column;font-size:.85em}
+#nrc .gun.on{border-color:#e8b040;color:#ffe2a0}
+#nrc .reload.need{border-color:#e8b040;color:#ffe2a0;animation:nrcPulse .7s infinite}
 @keyframes nrcPulse{50%{box-shadow:0 0 22px rgba(232,200,144,.95)}}`;
   function build() {
     const ui = document.getElementById('ui'); const s = document.createElement('style'); s.textContent = CSS; document.head.appendChild(s);
     root = document.createElement('div'); root.id = 'nrc';
     root.innerHTML = '<div class="base"></div><div class="knob"></div><div class="btn fire"><span>FIRE</span></div><div class="btn reload"><i>&#x21bb;</i><span>RELOAD</span></div>' +
-      '<div class="btn smoke"><span>SMOKE</span><b>6</b></div><div class="btn scan"><i>&#x25ce;</i><span>SCAN</span></div><div class="btn interact"><span>TALK</span></div>';
+      '<div class="btn gun"><svg viewBox="0 0 24 16" width="1.9em" height="1.25em"><path d="M2 3h17l1 2h2v3h-9l-1 2h-3l-1.6 5H3l1.8-6H2z" fill="currentColor"/></svg><span>GUN</span></div><div class="btn smoke"><span>SMOKE</span><b>6</b></div><div class="btn scan"><i>&#x25ce;</i><span>SCAN</span></div><div class="btn interact"><span>TALK</span></div>';
     ui.appendChild(root);
-    for (const n of ['base', 'knob', 'fire', 'reload', 'smoke', 'scan', 'interact']) el[n] = root.querySelector('.' + n);
+    for (const n of ['base', 'knob', 'fire', 'gun', 'reload', 'smoke', 'scan', 'interact']) el[n] = root.querySelector('.' + n);
     el.smokeN = el.smoke.querySelector('b'); el.interLabel = el.interact.querySelector('span');
   }
 
@@ -83072,6 +83598,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       if (isTarget(t.target)) continue;
       const [x, y] = local(t); let k = null;
       if (near(x, y, L.fx, L.fy, L.fr * 1.25)) { k = 'fire'; fireTouches++; }
+      else if (NR.player.armed && near(x, y, L.gx, L.gy, L.rr * 1.2)) { k = 'gun'; pend.gun = true; }
       else if (near(x, y, L.bx, L.ry, L.rr * 1.2)) { k = 'reload'; pend.reload = true; }
       else if (near(x, y, L.bx, L.smy, L.rr * 1.2)) { k = 'smoke'; pend.smoke = true; }
       else if (near(x, y, L.bx, L.scy, L.rr * 1.2)) { k = 'scan'; scanTouches++; }
@@ -83107,11 +83634,11 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // ---- keyboard + mouse ----
   const keys = new Set(); let mouseFire = false, locked = false;
-  const GAME = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'Tab', 'KeyC', 'Space']);
+  const GAME = new Set(['KeyG', 'Digit1', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyR', 'KeyF', 'KeyQ', 'KeyE', 'Tab', 'KeyC', 'Space']);
   function onKey(e) {
     lastDevice = 'keys'; if (GAME.has(e.code) && inPlay()) e.preventDefault(); if (e.repeat) return; keys.add(e.code); pend.any = true;
     if (!inPlay()) return;
-    if (e.code === 'KeyR') pend.reload = true; else if (e.code === 'KeyQ') pend.smoke = true; else if (e.code === 'KeyE') pend.interact = true;
+    if (e.code === 'KeyG' || e.code === 'Digit1') pend.gun = true; else if (e.code === 'KeyR') pend.reload = true; else if (e.code === 'KeyQ') pend.smoke = true; else if (e.code === 'KeyE') pend.interact = true;
     else if (e.code === 'Tab' || e.code === 'KeyC') pend.caseFile = true; else if (e.code === 'Escape' || e.code === 'KeyP') pend.pause = true;
   }
   function onMouseMove(e) { if (!inPlay()) return; if (locked || (e.buttons & 2)) { const s = C.LOOK_MOUSE * (core.settings.sens || 1); pend.lookX += e.movementX * s; pend.lookY += e.movementY * s; } }
@@ -83132,11 +83659,15 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     addEventListener('keydown', onKey, true); addEventListener('keyup', e => keys.delete(e.code), true);
     addEventListener('mousemove', onMouseMove); addEventListener('mousedown', onMouseDown); addEventListener('mouseup', e => { if (e.button === 0) mouseFire = false; });
     addEventListener('contextmenu', e => e.preventDefault());
+    let wheelT = 0; addEventListener('wheel', e => { if (!inPlay()) return; const now = performance.now(); if (now - wheelT > 350 && Math.abs(e.deltaY) > 4) { wheelT = now; pend.gun = true; } }, { passive: true });
     addEventListener('blur', () => { keys.clear(); release(); mouseFire = false; });
     document.addEventListener('visibilitychange', () => { if (document.hidden) { keys.clear(); release(); if (inPlay()) pend.pause = true; } });
     NR.bus.on('resize', layout); NR.bus.on('state', () => { release(); mouseFire = false; });
     layout();
   }
+  // gamepad: Y (button 3) draws / holsters
+  let padY = false;
+  function pollPad() { try { const l = navigator.getGamepads ? navigator.getGamepads() : []; for (const g of l) if (g && g.connected) { const y = !!(g.buttons[3] && g.buttons[3].pressed); if (y && !padY && inPlay()) pend.gun = true; padY = y; break; } } catch (e) {} }
   function exitLock() { if (document.pointerLockElement) try { document.exitPointerLock(); } catch (e) {} }
   const kd = (a, b) => keys.has(a) || keys.has(b);
   function update() {
@@ -83150,9 +83681,9 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       state.fire = fireTouches > 0 || mouseFire; state.scan = scanTouches > 0 || keys.has('KeyF');
     } else { state.mx = state.my = state.lookX = state.lookY = 0; state.fire = state.scan = false; }
     pend.lookX = pend.lookY = 0;
-    state.reload = play && pend.reload; state.smoke = play && pend.smoke; state.interact = play && pend.interact; state.caseFile = pend.caseFile; state.pause = pend.pause; state.any = pend.any;
-    pend.reload = pend.smoke = pend.interact = pend.caseFile = pend.pause = pend.any = false;
-    if (NR.controls.inject && play) { const j = NR.controls.inject; for (const k in j) { if (k === 'lookX' || k === 'lookY') state[k] += j[k]; else state[k] = state[k] || j[k]; } j.lookX = j.lookY = 0; j.reload = j.smoke = j.interact = false; } // test autopilot
+    pollPad(); state.gun = play && pend.gun; state.reload = play && pend.reload; state.smoke = play && pend.smoke; state.interact = play && pend.interact; state.caseFile = pend.caseFile; state.pause = pend.pause; state.any = pend.any;
+    pend.gun = pend.reload = pend.smoke = pend.interact = pend.caseFile = pend.pause = pend.any = false;
+    if (NR.controls.inject && play) { const j = NR.controls.inject; for (const k in j) { if (k === 'lookX' || k === 'lookY') state[k] += j[k]; else state[k] = state[k] || j[k]; } j.lookX = j.lookY = 0; j.gun = j.reload = j.smoke = j.interact = false; } // test autopilot
     if (shown) draw();
   }
   let vKnob = '', vBase = '';
@@ -83161,8 +83692,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const b = 'translate3d(' + (stick.bx - L.R) + 'px,' + (stick.by - L.R) + 'px,0)'; if (b !== vBase) { vBase = b; el.base.style.transform = b; }
     let kx = stick.bx, ky = stick.by; if (act) { const dx = stick.x - stick.bx, dy = stick.y - stick.by, l = Math.hypot(dx, dy), m = Math.min(l, L.R); if (l > 0) { kx += dx / l * m; ky += dy / l * m; } }
     const kr = Math.round(26 * L.k), kn = 'translate3d(' + Math.round(kx - kr) + 'px,' + Math.round(ky - kr) + 'px,0)'; if (kn !== vKnob) { vKnob = kn; el.knob.style.transform = kn; }
-    const P = NR.player; el.smokeN.textContent = P.pack; el.scan.classList.toggle('on', state.scan); el.fire.classList.toggle('empty', P.rounds === 0);
-    el.fire.style.display = el.reload.style.display = P.armed ? 'flex' : 'none';
+    const P = NR.player; el.smokeN.textContent = P.pack; el.scan.classList.toggle('on', state.scan); el.fire.classList.toggle('empty', P.rounds === 0); el.reload.classList.toggle('need', !!P.slideLock && P.reloadT <= 0);
+    el.fire.style.display = el.reload.style.display = P.armed && P.drawn ? 'flex' : 'none'; el.gun.style.display = P.armed ? 'flex' : 'none'; el.gun.classList.toggle('on', !!P.drawn);
   }
   function setInteract(label) { if (!root) return; const on = !!label; el.interact.classList.toggle('show', on); if (on && el.interLabel.textContent !== label) el.interLabel.textContent = label; }
   NR.controls = { state, init, update, layout, setInteract, exitLock, release, get lastDevice() { return lastDevice; }, get touchLayout() { return L; }, get root() { return root; } };
@@ -83171,7 +83702,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 </script>
 <script>/* audio.js */
 // NEON RAIN audio: John's score (assets/music/tracks.json) on two crossfading decks with a VO duck, seamless rain loops per scene
-// (OGG, MP3 fallback for iOS Safari), Media Session, and synthesized sfx (revolver, reload, lighter, heartbeat).
+// (OGG, MP3 fallback for iOS Safari), Media Session, and synthesized sfx (.45 pistol, magazine reload, brass, lighter, heartbeat).
 (function () {
   let ctx = null, master = null, sfxBus = null, unlocked = false, noiseBuf = null, humNodes = null;
   const S = () => NR.core.settings;
@@ -83198,9 +83729,15 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     o.connect(g); g.connect(sfxBus); o.start(t); o.stop(t + decay + 0.05);
   }
   const fx = {
-    shot() { if (!ensure()) return; const t = ctx.currentTime; noise(0.05, 'lowpass', 3800, 0.5, 0.9, 0.001, 0.22, t); noise(0.2, 'lowpass', 600, 0.7, 0.7, 0.002, 0.5, t); tone(110, 'sine', 0.8, 0.25, t, 40); noise(0.4, 'bandpass', 900, 0.4, 0.08, 0.05, 0.9, t + 0.05); },
+    shot() { if (!ensure()) return; const t = ctx.currentTime; // .45: a sharp crack, a short body, a fast room tail
+      noise(0.025, 'highpass', 2500, 0.6, 1.0, 0.0005, 0.08, t); noise(0.06, 'lowpass', 5200, 0.5, 0.8, 0.001, 0.16, t); noise(0.12, 'lowpass', 700, 0.8, 0.6, 0.002, 0.3, t);
+      tone(150, 'sine', 0.7, 0.16, t, 55); noise(0.3, 'bandpass', 1400, 0.5, 0.07, 0.03, 0.55, t + 0.04); },
+    slide() { if (!ensure()) return; const t = ctx.currentTime; tone(2200, 'square', 0.07, 0.025, t); noise(0.03, 'bandpass', 3000, 3, 0.18, 0.001, 0.05, t); tone(1500, 'square', 0.09, 0.03, t + 0.09); noise(0.04, 'bandpass', 2200, 2, 0.22, 0.001, 0.07, t + 0.09); },
+    magOut() { if (!ensure()) return; const t = ctx.currentTime; tone(1300, 'square', 0.05, 0.02, t); noise(0.05, 'bandpass', 900, 2, 0.15, 0.002, 0.08, t + 0.25); tone(240, 'triangle', 0.08, 0.12, t + 0.27, 160); },
+    magIn() { if (!ensure()) return; const t = ctx.currentTime; noise(0.03, 'bandpass', 1800, 2, 0.2, 0.001, 0.05, t); tone(1700, 'square', 0.08, 0.025, t + 0.02); },
+    brass() { if (!ensure()) return; const t = ctx.currentTime + 0.32; for (let i = 0; i < 3; i++) tone(5200 + Math.random() * 1800, 'triangle', 0.035 / (i + 1), 0.06, t + i * (0.07 + Math.random() * 0.05)); },
     enemyShot(dist) { if (!ensure()) return; const v = Math.max(0.12, 0.5 - dist * 0.015); noise(0.04, 'lowpass', 2600, 0.5, v, 0.001, 0.18); tone(140, 'sine', v * 0.6, 0.18, null, 50); },
-    dry() { tone(2400, 'square', 0.08, 0.03); },
+    dry() { tone(2600, 'square', 0.06, 0.02); noise(0.015, 'highpass', 3000, 0.7, 0.08, 0.001, 0.03); },
     reload() { if (!ensure()) return; const t = ctx.currentTime; tone(1800, 'square', 0.06, 0.03, t); noise(0.3, 'bandpass', 3500, 3, 0.12, 0.01, 0.35, t + 0.2); for (let i = 0; i < 6; i++) tone(2600 + i * 40, 'square', 0.04, 0.02, t + 0.55 + i * 0.07); tone(1500, 'square', 0.09, 0.04, t + 1.4); },
     hitFlesh() { noise(0.03, 'lowpass', 900, 0.8, 0.5, 0.001, 0.12); },
     head() { tone(2100, 'triangle', 0.15, 0.12); noise(0.03, 'lowpass', 1200, 0.8, 0.5, 0.001, 0.12); },
@@ -83320,7 +83857,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   function setVolumes() { rainLevel(); if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; }
   function init() {
     const B = NR.bus;
-    B.on('shot', () => fx.shot()); B.on('dryFire', () => fx.dry()); B.on('reload', () => fx.reload());
+    B.on('shot', () => { fx.shot(); fx.brass(); }); B.on('dryFire', () => fx.dry());
+    B.on('reload', d => { setTimeout(fx.magOut, 120); setTimeout(fx.magIn, d.dur * 600); if (d.empty) setTimeout(fx.slide, d.dur * 860); });
     B.on('nearMiss', () => fx.whizz()); B.on('hitEnemy', d => d.head ? fx.head() : fx.hitFlesh()); B.on('playerHurt', () => fx.hurt());
     B.on('enemyShot', d => { const P = NR.player; fx.enemyShot(P ? d.pos.distanceTo(P.pos) : 10); });
     B.on('smoke', () => { fx.lighter(); setTimeout(fx.inhale, 400); }); B.on('focus', () => fx.focus()); B.on('clue', () => fx.clue());
@@ -83365,7 +83903,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       leave: [
         [VO, 'She left the money and her perfume. Only one of them would last the week.'],
       ],
-      gunTut: { title: 'THE REVOLVER', body: 'Six shots. RELOAD when the cylinder runs dry.\n\nHold your phone upright. The left thumb moves. Drag the right side to aim. FIRE sits just above the stick.\n\nHead shots do double damage. Cover lets you get your breath back.' },
+      gunTut: { title: 'THE PISTOL', body: 'A .45. Seven in the magazine, one in the chamber. When the slide locks back, RELOAD. Reload early and the round in the chamber stays.\n\nGUN draws it and puts it away again. Holstered, your hand keeps the cigarette.\n\nHold your phone upright. The left thumb moves. Drag the right side to aim. FIRE sits just above the stick.\n\nHead shots do double damage. Cover lets you get your breath back.' },
     },
     alley: {
       card: 'THAT NIGHT.\nTHE ALLEY BEHIND KESTREL STREET.',
@@ -83569,7 +84107,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 #nru .obj::after{content:"";display:block;width:60px;height:1px;margin:6px auto 0;background:rgba(234,223,202,.5)}
 #nru .tl{position:absolute;left:12px;top:calc(10px + env(safe-area-inset-top,0px));font-family:"Courier New",monospace;font-weight:bold;font-size:12px;letter-spacing:.1em;line-height:1.7;text-shadow:0 1px 2px #000}
 #nru .cyl{display:flex;gap:3px;margin-bottom:2px}
-#nru .cyl b{width:9px;height:9px;border-radius:50%;background:#e8b040;box-shadow:0 0 4px rgba(232,176,64,.8)}
+#nru .cyl b{width:5px;height:12px;border-radius:2px 2px 1px 1px;background:#e8b040;box-shadow:0 0 4px rgba(232,176,64,.8)}
+#nru .cyl b.ch{margin-left:5px}
 #nru .cyl b.x{background:rgba(234,223,202,.18);box-shadow:none}
 #nru .tl .rl{color:#e8b040}
 #nru .tr{position:absolute;right:10px;top:calc(8px + env(safe-area-inset-top,0px));display:flex;gap:8px}
@@ -83725,7 +84264,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     E.obj = h('div', 'obj', '', E.hud);
     E.tl = h('div', 'tl', '<div class="cyl"></div><div class="rl"></div><div class="pk"></div><div class="lv"></div>', E.hud);
     E.cyl = E.tl.querySelector('.cyl'); E.rl = E.tl.querySelector('.rl'); E.pk = E.tl.querySelector('.pk'); E.lv = E.tl.querySelector('.lv');
-    for (let i = 0; i < 6; i++) h('b', '', null, E.cyl);
+    for (let i = 0; i < 8; i++) h('b', i === 7 ? 'ch' : '', null, E.cyl); // 7 in the magazine + 1 in the chamber
     E.tr = h('div', 'tr', '', E.hud);
     E.caseBtn = h('div', 'ib', 'CASE', E.tr); onTap(E.caseBtn, () => NR.game.openCase());
     E.pauseBtn = h('div', 'ib', '| |', E.tr); onTap(E.pauseBtn, () => NR.game.pause(true));
@@ -83783,8 +84322,9 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
       try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
       const g = document.createElement('div'); g.id = 'nrgate';
       g.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;padding-bottom:16vh;background:rgba(0,0,0,.6);font-family:"Courier New",monospace;color:#eadfca;letter-spacing:6px;font-size:18px;text-shadow:0 0 10px #b8241c;cursor:pointer;touch-action:none';
-      g.innerHTML = '<span style="animation:nrblink 1.6s steps(2) infinite">TAP TO ENTER</span>';
-      const go = (e) => { if (e) { e.preventDefault(); e.stopPropagation(); } NR.audio.unlock(); g.remove(); removeEventListener('keydown', go, true); res(); };
+      g.innerHTML = '<span style="animation:nrblink 1.6s steps(2) infinite">' + (window.READY ? 'TAP TO ENTER' : 'LOADING THE CITY') + '</span>';
+      const lab = g.querySelector('span'); if (!window.READY) { const iv = setInterval(() => { if (window.READY) { lab.textContent = 'TAP TO ENTER'; clearInterval(iv); } }, 100); }
+      const go = (e) => { if (e) { e.preventDefault(); e.stopPropagation(); } if (!window.READY) return; NR.audio.unlock(); g.remove(); removeEventListener('keydown', go, true); res(); };
       g.addEventListener('click', go); g.addEventListener('touchend', go); addEventListener('keydown', go, true);
       document.body.appendChild(g);
     });
@@ -83841,13 +84381,13 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     E.hud.classList.toggle('on', play);
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) E.toast.classList.remove('on'); }
     if (!play) return;
-    E.cyl.style.display = P.armed ? 'flex' : 'none';
-    if (P.rounds !== vRounds) { vRounds = P.rounds; E.cyl.querySelectorAll('b').forEach((b, i) => b.classList.toggle('x', i >= P.rounds)); }
-    const rel = P.reloadT > 0 ? 'RELOADING' : (P.armed && P.rounds === 0 ? 'RELOAD' : '');
+    E.cyl.style.display = P.armed && P.drawn ? 'flex' : 'none'; E.rl.style.display = P.armed && P.drawn ? 'block' : 'none';
+    const rk = P.rounds + '/' + P.mags; if (rk !== vRounds) { vRounds = rk; E.cyl.querySelectorAll('b').forEach((b, i) => b.classList.toggle('x', i === 7 ? P.rounds < 8 : i >= Math.min(7, P.rounds))); }
+    const rel = P.reloadT > 0 ? 'RELOADING  MAGS ' + P.mags : (P.armed && P.slideLock ? 'SLIDE LOCKED: RELOAD' : (P.armed ? 'MAGS ' + P.mags : ''));
     if (rel !== vRel) { vRel = rel; E.rl.textContent = rel; }
     if (P.pack !== vPack) { vPack = P.pack; E.pk.textContent = 'SMOKES ' + P.pack; }
     if (P.lives !== vLives) { vLives = P.lives; E.lv.textContent = 'LIVES ' + '◆'.repeat(Math.max(0, P.lives)) + '◇'.repeat(Math.max(0, C.LIVES - P.lives)); }
-    const a = P.armed && P.assistTarget(0.035); E.xh.classList.toggle('on', !!a); E.xh.style.display = P.armed ? 'block' : 'none';
+    const a = P.armed && P.drawn && P.assistTarget(0.035); E.xh.classList.toggle('on', !!a); E.xh.style.display = P.armed && P.drawn ? 'block' : 'none';
     if (hitT > 0) { hitT -= dt; E.xh.classList.add('hit'); } else E.xh.classList.remove('hit');
     const sc = NR.game.scanProgress || 0; E.scanbar.style.display = sc > 0 ? 'block' : 'none';
     if (sc > 0) E.scanbar.style.background = 'conic-gradient(#e8b040 0 ' + (sc * 100).toFixed(0) + '%,rgba(232,176,64,.15) ' + (sc * 100).toFixed(0) + '% 100%)', E.scanbar.style.webkitMask = E.scanbar.style.mask = 'radial-gradient(circle,transparent 58%,#000 60%)';
@@ -83886,7 +84426,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     const S = NR.story; return new Promise(resolve => {
       const el = E.itg; el.innerHTML = '';
       const pic = h('div', 'pic', '', el); const imgs = {};
-      for (const m of ['warm', 'guarded', 'cold']) { const im = h('img', '', null, pic); const u = NR.CLOSE(who, m); im.alt = data.name + ' ' + m; imgs[m] = im; if (core.settings.bw) noirSrc(u).then(s => { im.src = s; }); else im.src = u; }
+      for (const m of ['warm', 'guarded', 'cold']) { const im = h('img', '', null, pic); const u = NR.CLOSE(who, m); im.alt = data.name + ' ' + m; imgs[m] = im; if (core.settings.film === 'bwred') noirSrc(u).then(s => { im.src = s; }); else im.src = u; }
       h('div', 'nm', data.name + '<small>' + data.role + '</small>', pic);
       const smk = h('div', 'smk', '', pic);
       const met = h('div', 'met', '<div>PULSE <span class="val pv">--</span><canvas width="240" height="52"></canvas></div><div>EYES <span class="val ev">--</span><div class="bar"><i class="eb"></i></div></div><div>HESITATION <span class="val hv">--</span><div class="bar"><i class="hb"></i></div></div>', el);
@@ -83960,7 +84500,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   }
   function show(name, on) { const m = { pause: E.pause, title: E.title }; if (m[name]) m[name].classList.toggle('on', on); }
 
-  const UI = NR.ui = { init(c) { core = c; build(); }, gate, title, say, lines, card, tutorial, letterbox, toast, objective, prompt, update, caseFile, interrogate, gameOver, endCard, show, settingsOpen, fast: false, get el() { return E; } };
+  const UI = NR.ui = { eye: (s) => NR.eye.play(s), init(c) { core = c; build(); }, gate, title, say, lines, card, tutorial, letterbox, toast, objective, prompt, update, caseFile, interrogate, gameOver, endCard, show, settingsOpen, fast: false, get el() { return E; } };
 })();
 
 // NEON RAIN jukebox (landing menu), in the menu's own style. Three switchable designs: ?jb=a (inline list),
@@ -84029,6 +84569,59 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   NR.jukebox = { open: openPanel, close, play, next, prev, toggle, render, variant: V, get isOpen() { return open; }, get index() { return idx; }, get list() { return list; }, get shuffle() { return shuffle; }, get repeat() { return repeat; } };
 })();
 
+// NEON RAIN eye transition: an extreme close-up of an eye (original ComfyUI still, assets/eye/eye.jpg) with a slow push-in;
+// the city's lights drift and twinkle in the iris (drawn live, clipped to the iris). Used after the menu and between chapters.
+(function () {
+  const IRIS = { x: 512, y: 492, r: 300 }, PUPIL = 95, N = 220;
+  let el = null, img = null, cv = null, g = null;
+  const rng = NR.rng(77), lights = [];
+  for (let i = 0; i < N; i++) { const band = rng(); const warm = rng() < 0.78;
+    lights.push({ u: rng() * 2.4 - 1.2, v: -0.05 + Math.pow(band, 0.7) * 0.5 - (rng() < 0.25 ? rng() * 0.35 : 0), s: 0.6 + rng() * 1.8, ph: rng() * 6.28, sp: 0.6 + rng() * 3,
+      c: warm ? [255, 170 + rng() * 50 | 0, 80 + rng() * 40 | 0] : (rng() < 0.7 ? [90, 230, 255] : [255, 70, 60]) }); }
+  function build() {
+    const st = document.createElement('style');
+    st.textContent = '#nreye{position:fixed;inset:0;z-index:40;background:#000;overflow:hidden;opacity:0;pointer-events:auto;display:none}#nreye.on{display:block}' +
+      '#nreye .lay{position:absolute;transform-origin:50% 48%}#nreye img,#nreye canvas{position:absolute;inset:0;width:100%;height:100%}#nreye canvas{mix-blend-mode:screen}';
+    document.head.appendChild(st);
+    el = document.createElement('div'); el.id = 'nreye'; el.innerHTML = '<div class="lay"><img alt=""><canvas width="1024" height="1024"></canvas></div>';
+    document.body.appendChild(el); img = el.querySelector('img'); img.src = NR.ASSET + 'eye/eye.jpg'; cv = el.querySelector('canvas'); g = cv.getContext('2d');
+  }
+  function layout() { const vw = innerWidth, vh = innerHeight, S = Math.max(vw, vh) * 1.08, L = el.querySelector('.lay');
+    Object.assign(L.style, { width: S + 'px', height: S + 'px', left: (vw / 2 - S * IRIS.x / 1024) + 'px', top: (vh / 2 - S * IRIS.y / 1024) + 'px' }); }
+  function draw(t) {
+    g.clearRect(0, 0, 1024, 1024); g.save(); g.beginPath(); g.arc(IRIS.x, IRIS.y, IRIS.r, 0, 7); g.clip();
+    const drift = t * 0.045;
+    for (const L of lights) {
+      let u = ((L.u + drift + 1.2) % 2.4) - 1.2, v = L.v; const k = 1 / (1 + 0.3 * (u * u + v * v));       // convex cornea: fisheye squeeze
+      const x = IRIS.x + u * k * IRIS.r * 0.95, y = IRIS.y + v * k * IRIS.r * 0.95 + 40;
+      const tw = 0.55 + 0.45 * Math.sin(t * L.sp + L.ph), a = tw * (Math.hypot(x - IRIS.x, y - IRIS.y) < PUPIL ? 1 : 0.7);
+      const r = L.s * k * 2.2, gr = g.createRadialGradient(x, y, 0, x, y, r * 3);
+      gr.addColorStop(0, `rgba(${L.c[0]},${L.c[1]},${L.c[2]},${a})`); gr.addColorStop(0.35, `rgba(${L.c[0]},${L.c[1]},${L.c[2]},${a * 0.35})`); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6);
+    }
+    // a hover cruiser's light crossing the reflection
+    const cx = IRIS.x - IRIS.r + ((t * 0.18) % 1.4) * IRIS.r * 1.6, cy = IRIS.y - IRIS.r * 0.32 + Math.sin(t * 0.7) * 10;
+    for (const [dx, col, rr] of [[0, '255,250,235', 14], [-26, '255,60,50', 6], [22, '120,200,255', 6]]) { const gr = g.createRadialGradient(cx + dx, cy, 0, cx + dx, cy, rr * 3); gr.addColorStop(0, `rgba(${col},0.95)`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(cx + dx - rr * 3, cy - rr * 3, rr * 6, rr * 6); }
+    g.restore();
+  }
+  // play the transition; resolves when done (tap to skip)
+  function play(secs = 4.4) {
+    if (!el) build(); layout(); el.classList.add('on');
+    const dur = NR.ui && NR.ui.fast ? 0.4 : secs, lay = el.querySelector('.lay');
+    return new Promise(res => {
+      const t0 = performance.now(); let done = false;
+      const end = () => { if (done) return; done = true; el.removeEventListener('pointerup', end); el.classList.remove('on'); el.style.opacity = 0; res(); };
+      el.addEventListener('pointerup', end);
+      (function frame(now) { if (done) return; const t = (now - t0) / 1000, f = Math.min(1, t / dur);
+        el.style.opacity = Math.min(1, t / 0.7, (dur - t) / 0.8).toFixed(3);
+        const e = f * f * (3 - 2 * f); lay.style.transform = 'scale(' + (1 + e * 0.38).toFixed(4) + ')';
+        draw(t + 3); if (t >= dur) end(); else requestAnimationFrame(frame); })(t0);
+      if (NR.audio && NR.audio.fx && NR.audio.fx.focus) NR.audio.fx.focus();
+    });
+  }
+  NR.eye = { play, IRIS };
+})();
+
 </script>
 <script>/* game.js */
 // NEON RAIN game: the director. Loads levels, runs the slice beats (office -> alley -> Blue Orchid), SCAN and INTERACT,
@@ -84052,13 +84645,13 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     for (const c of G.chars) c.remove(); G.chars = []; A.clear(); G.triggers = []; G.interacts = []; G.clues = [];
     core.setScene(L.scene, L.shaft); NR.fx.attach(L); P.setLevel(L);
     P.place(L.spawn.pos, L.spawn.yaw, 0);
-    NR.audio.ambience(NR.RAIN[name] || []);
+    if (NR.audio.unlocked) NR.audio.ambience(NR.RAIN[name] || []); // no audio work before TAP TO ENTER (AudioContext setup stalls the first frames)
     return L;
   }
   G.load = load;
   function yawPitchTo(p) { const e = P.eye(), dx = p.x - e.x, dy = p.y - e.y, dz = p.z - e.z; return [Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))]; }
   function lookAt(p, secs) { G.lookTarget = p; G.lookRate = secs ? 3 / secs : 4; }
-  function setState(s) { core.setState(s); UI.letterbox(s === 'CUTSCENE'); }
+  function setState(s) { if (s === 'CUTSCENE' && NR.player.holster) NR.player.holster(); core.setState(s); UI.letterbox(s === 'CUTSCENE'); }
   async function scene(lines) { setState('CUTSCENE'); await UI.lines(lines); }
 
   // ---------------------------------------------------------------- interactables, clues, triggers
@@ -84130,6 +84723,8 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     UI.toast('LIVES ' + P.lives, 'Back on your feet. The rain did not wait.', 2.5);
     setState('PLAY'); await core.fadeTo(0, 0.6);
   });
+  NR.bus.on('magPickup', d => UI.toast('+1 MAGAZINE', 'Off his belt. Magazines: ' + d.mags, 1.8));
+  NR.bus.on('noMags', () => UI.toast('NO MAGAZINES', 'Take one off a man you dropped.', 2));
   NR.bus.on('enemyDown', d => {
     const e = d.enemy; if (e.drops && Math.random() < e.drops) { P.pack = Math.min(C.PACK_MAX, P.pack + 1); UI.toast('+1 SMOKE', 'Lifted from his breast pocket.', 2); }
     if (d.head) UI.toast('HEAD SHOT', '', 1.0);
@@ -84182,20 +84777,20 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     await UI.lines(S.office.light); await UI.tutorial(S.office.smokeTut);
     await UI.lines(S.office.after);
     G.beat = 'office_leave';
-    vela.walkTo([V3(-1.5, 0, -2.4), V3(-1.0, 0, -4.2), V3(-1.0, 0, -6.2)], 1.1).then(() => { vela.visible = false; });
+    vela.walkTo([V3(-1.5, 0, -2.4), V3(-1.0, 0, -4.2), V3(-1.0, 0, -6.2)], 1.1, { stop: false }).then(() => { vela.visible = false; });
     await UI.lines(S.office.leave); await waitFor(() => !vela.path);
     G.lookTarget = null; G.lockMove = false; NR.audio.cue('02');
-    // take the revolver, go
+    // take the pistol, go
     let took = false;
-    interact({ pos: V3(-0.12, 0.8, -0.35), r: 1.5, label: 'TAKE GUN', enabled: () => !took, use: async () => { took = true; L.deskGun.visible = false; P.armed = true; P.rounds = C.GUN_ROUNDS; NR.audio.fx.reload(); setState('CUTSCENE'); await UI.tutorial(S.office.gunTut); setState('PLAY'); objective('Miles is waiting. Go out the door.'); } });
-    setState('PLAY'); G.beat = 'office_play'; objective('Take your revolver from the desk.');
+    interact({ pos: V3(-0.12, 0.8, -0.35), r: 1.5, label: 'TAKE GUN', enabled: () => !took, use: async () => { took = true; L.deskGun.visible = false; P.armed = true; P.rounds = C.GUN_ROUNDS; NR.audio.fx.reload(); setState('CUTSCENE'); await UI.tutorial(S.office.gunTut); setState('PLAY'); objective('GUN draws and holsters. Then go: Miles is waiting.'); } });
+    setState('PLAY'); G.beat = 'office_play'; objective('Take your pistol from the desk.');
     await waitFor(() => took && P.pos.z < -4.75);
     objective(''); setState('CUTSCENE'); await core.fadeTo(1, 0.8);
   }
 
   // ================================================================ BEAT 2: the alley
   async function alley() {
-    G.beat = 'alley'; NR.audio.cue('01'); await UI.card(S.alley.card, 2.4);
+    G.beat = 'alley'; NR.audio.cue('01'); await UI.eye(); await UI.card(S.alley.card, 2.4);
     const L = load('alley'); P.armed = true; P.lives = C.LIVES; P.reset(); P.place(L.spawn.pos, 0, 0);
     setState('CUTSCENE'); lookAt(V3(0, 1.4, -20), 2); core.fadeTo(0, 1.2);
     A.corpse(L, L.bodyPos, 0.4); NR.fx.pool(L.bodyPos.clone().add(V3(0.1, 0, -0.5)), 'human'); NR.fx.pool(L.bodyPos.clone().add(V3(-0.2, 0, 0.2)), 'human');
@@ -84221,7 +84816,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
   // ================================================================ BEAT 3: the Blue Orchid
   async function club() {
-    G.beat = 'club'; NR.audio.cue('01'); await UI.card(S.club.card, 2.4);
+    G.beat = 'club'; NR.audio.cue('01'); await UI.eye(); await UI.card(S.club.card, 2.4);
     const L = load('club'); P.lives = C.LIVES; P.reset(); P.place(L.spawn.pos, 0, 0);
     const dol = new A.Painted('dolores', L, L.doloresPos, Math.atan2(-5.6, 12)); G.chars.push(dol);
     const fightOnly = new URLSearchParams(location.search).get('beat') === 'clubfight'; // dev: straight to the club gunfight
@@ -84288,7 +84883,7 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club); NR.neon.start();
     G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null); NR.neon.stop();
     G.t0 = performance.now(); G.titleCam = false;
-    await core.fadeTo(1, 0.6);
+    await core.fadeTo(1, 0.6); await UI.eye(); // signature transition: the city in an eye
     const skip = new URLSearchParams(location.search).get('beat'); // dev: ?beat=alley or ?beat=club
     const toClub = skip === 'club' || skip === 'clubfight';
     if (skip !== 'alley' && !toClub) await office();
@@ -84338,10 +84933,285 @@ NR.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
     for (const who of ['vela', 'dolores']) A.preload(who);
     if (core.settings.chars === '3d') A.loadGLB(NR.ASSET + A.MODELS.vela).catch(() => {});
     core.startLoop();
-    window.READY = true;
     run().catch(e => console.error('[NR.game.run]', e));
+    // READY (and TAP TO ENTER) once the landing scene's async models have loaded and every program is compiled,
+    // so no shader compile stalls the menu after the tap
+    const t0 = performance.now(); let quiet = 0;
+    (function settle() {
+      const busy = NR.gltf && NR.gltf.pending > 0;
+      quiet = busy ? 0 : quiet + 1;
+      if (quiet >= 3 || performance.now() - t0 > 12000) {
+        try { core.renderer.compile(core.scene, core.camera); if (core.vm) core.renderer.compile(core.vm.scene, core.camera); } catch (e) {}
+        requestAnimationFrame(() => requestAnimationFrame(() => { window.READY = true; }));
+      } else setTimeout(settle, 150);
+    })();
   }
   boot();
+})();
+
+</script>
+<script>/* vperf.js */
+// NEON RAIN video performances: AI-filmed loops (LTX image-to-video, matted, looped) on the painted billboards and in the
+// interrogation close-up. Chrome/Firefox/Android play VP9 WebM with alpha; WebKit (iOS, Safari) plays an H.264 MP4 with the
+// alpha stacked under the colour, unpacked in the shader. The clips are filmed from the front, so they show only while the
+// camera sees her from the front and frames her waist-up (cinematic beats); the painted angles cover every other view.
+// Assets: assets/video/*. Build: tools/video_perf/. URL ?vp=webm|stack|off forces a path.
+(function () {
+  const T = THREE, UA = navigator.userAgent;
+  const iOS = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+  const webkit = /AppleWebKit/.test(UA) && !/Chrome|Chromium|CriOS|FxiOS|Edg|Android/.test(UA);
+  const probe = document.createElement('video');
+  const canWebm = !!probe.canPlayType('video/webm; codecs="vp9"');
+  const canMp4 = !!probe.canPlayType('video/mp4; codecs="avc1.4D401E"');
+  const force = new URLSearchParams(location.search).get('vp');
+  const MODE = force === 'off' || force === 'webm' || force === 'stack' ? force : (iOS || webkit || !canWebm) ? 'stack' : 'webm';
+  const BASE = NR.ASSET + 'video/';
+  // clips that exist in assets/video (kept in step with tools/video_perf); anything else stays on the painted figure, no request made
+  const AVAIL = new Set(['vela_idle', 'vela_talk', 'dolores_idle', 'dolores_warm', 'dolores_guarded', 'dolores_cold', 'vela_smoke', 'vela_stole', 'vela_full', 'vela_full_640']);
+
+  // framing per clip, in frame fractions: top = top of the hair, chin = bottom of the chin, cx = centre of the face
+  const FAV1 = { top: 0.037, chin: 0.32, cx: 0.5 };
+  const CLIPS = {
+    vela_idle: Object.assign({ file: 'vela_idle' }, FAV1),
+    vela_talk: Object.assign({ file: 'vela_talk' }, FAV1),
+    vela_smoke: Object.assign({ file: 'vela_smoke' }, FAV1),
+    vela_stole: { file: 'vela_stole', top: 0.065, chin: 0.28, cx: 0.5, once: true },
+    vela_full: { file: 'vela_full', top: 0.072, foot: 0.973, cx: 0.5, full: true }, // full-length idle for the open lens (1280 px)
+    vela_full_sm: { file: 'vela_full_640', top: 0.072, foot: 0.973, cx: 0.5, full: true }, // same clip, 640 px: used when she covers < ~850 render px (no shimmer from 2x minification)
+    dolores_idle: { file: 'dolores_idle', top: 0.03, chin: 0.215, cx: 0.48 },
+  };
+  const PANEL = { dolores: { warm: 'dolores_warm', guarded: 'dolores_guarded', cold: 'dolores_cold' } };
+  const HEAD = 0.27; // metres from the top of the hair to the chin
+  const FRAMED_FOV = 27, OPEN_FOV = 74; // 32 deg: at ~2 m the waist-up frame fills a portrait phone and its lower edge stays off screen
+
+  const vids = {};
+  // WebKit (and iOS Safari) only paint frames for a <video> that sits in the document; park them, invisible, in a 1 px box
+  let park = null;
+  function parkVideo(v) { if (!park) { park = document.createElement('div'); park.setAttribute('aria-hidden', 'true'); park.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0.01;pointer-events:none;z-index:-1'; document.body.appendChild(park); } park.appendChild(v); }
+  function video(file, stacked, loop) {
+    const key = file + (stacked ? '_stack' : '') + (loop ? '' : '_once');
+    if (vids[key]) return vids[key];
+    const v = document.createElement('video');
+    v.muted = true; v.defaultMuted = true; v.loop = !!loop; v.playsInline = true; v.preload = 'auto';
+    v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('muted', '');
+    v.src = BASE + file + (stacked ? '_stack.mp4' : '.webm');
+    v.addEventListener('error', () => { v.failed = true; console.warn('[vperf] video failed', v.src); }); parkVideo(v);
+    // WebKit uploads a <video> straight into a WebGL2 texture as empty pixels, so on that path each new frame is copied through a 2D canvas
+    let tex, cv = null, g = null, lastT = -1;
+    if (stacked) { cv = document.createElement('canvas'); cv.width = 2; cv.height = 2; g = cv.getContext('2d'); tex = new T.CanvasTexture(cv); }
+    else tex = new T.VideoTexture(v);
+    tex.colorSpace = T.NoColorSpace; tex.minFilter = T.LinearFilter; tex.magFilter = T.LinearFilter; tex.generateMipmaps = false;
+    const pump = () => { if (!cv || v.readyState < 2 || !v.videoWidth) return; if (cv.width !== v.videoWidth || cv.height !== v.videoHeight) { cv.width = v.videoWidth; cv.height = v.videoHeight; tex.dispose(); lastT = -1; }
+      if (v.currentTime === lastT) return; lastT = v.currentTime; g.drawImage(v, 0, 0); tex.needsUpdate = true; };
+    return (vids[key] = { v, tex, stacked: !!stacked, file, pump });
+  }
+  const live = (c) => c && !c.v.failed && c.v.readyState >= 2;
+  function play(c) { if (c && c.v.paused) { const p = c.v.play(); if (p && p.catch) p.catch(() => {}); } }
+
+  // ---------------------------------------------------------------- billboard material
+  const SAMPLE = `
+    vec4 samp(sampler2D m, float st, vec2 uv) {
+      if (st > 0.5) { vec3 c = texture2D(m, vec2(uv.x, 0.5 + uv.y * 0.5)).rgb; float a = texture2D(m, vec2(uv.x, uv.y * 0.5)).g; return vec4(c, a); }
+      return texture2D(m, uv); }
+    vec4 both(vec2 uv) { vec4 a = samp(map, st1, uv); if (mixK <= 0.001) return a; vec4 b = samp(map2, st2, uv); return mix(a, b, mixK); }`;
+  const VERT = 'varying vec2 vUv; varying vec3 vW; varying float vDepth; void main(){ vUv=uv; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vDepth=-mv.z; gl_Position=projectionMatrix*mv; }';
+  function mats(u) {
+    const head = 'uniform sampler2D map, map2, cookie; uniform float st1, st2, mixK, fade, keyGain, fogD, hit, rimK; uniform vec3 ambient, key, warm, fogC, rimC; uniform vec2 rimDir; uniform mat4 lightVP; varying vec2 vUv; varying vec3 vW; varying float vDepth;' + SAMPLE;
+    const col = new T.ShaderMaterial({
+      uniforms: u, vertexShader: VERT, transparent: true, depthWrite: false, side: T.DoubleSide,
+      blending: T.CustomBlending, blendEquation: T.AddEquation, blendSrc: T.SrcAlphaFactor, blendDst: T.OneMinusSrcAlphaFactor, blendSrcAlpha: T.ZeroFactor, blendDstAlpha: T.OneFactor,
+      fragmentShader: head + `
+        void main(){ vec4 t = both(vUv); float a = t.a * fade; if (a < 0.004) discard;
+          vec3 c = pow(t.rgb, vec3(2.2)) * 0.62; // filmed footage keeps its own contrast; the scene light only tints and stripes it
+          vec4 lp = lightVP * vec4(vW, 1.); vec2 luv = lp.xy / lp.w * 0.5 + 0.5; float ck = 0.;
+          if (keyGain > 0. && lp.w > 0. && luv.x > 0. && luv.x < 1. && luv.y > 0. && luv.y < 1.) {
+            // softened blinds on the filmed figure: 9-tap blur of the cookie and half the contrast, so the stripes read as light, not damage
+            float acc = 0.; for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) acc += texture2D(cookie, luv + vec2(float(i), float(j)) * 0.012).r;
+            ck = mix(0.4, smoothstep(0.2, 0.9, acc / 9.), 0.5); }
+          float side = smoothstep(0.1, 0.9, vUv.x);
+          vec3 light = ambient * (1.3 + 0.7 * side) + key * ck * keyGain * (0.4 + 0.6 * side) + warm * (1.0 - vUv.y) * 0.5;
+          vec3 o = c * light * 1.25 + vec3(hit, 0., 0.);
+          // rim: the edge that faces the light catches it
+          float ao = both(vUv + rimDir).a; float rim = clamp(t.a - ao, 0., 1.) * rimK; o += rimC * rim * (0.35 + ck);
+          float f = 1.0 - exp(-fogD * fogD * vDepth * vDepth); o = mix(o, fogC * fogC, f);
+          gl_FragColor = vec4(o, a); }`,
+    });
+    // second pass: depth + the red-keep alpha for the B&W RED grade, colour untouched
+    const keep = new T.ShaderMaterial({
+      uniforms: u, vertexShader: VERT, transparent: false, depthWrite: true, side: T.DoubleSide,
+      blending: T.CustomBlending, blendEquation: T.AddEquation, blendSrc: T.ZeroFactor, blendDst: T.OneFactor, blendSrcAlpha: T.OneFactor, blendDstAlpha: T.ZeroFactor,
+      fragmentShader: head + `
+        void main(){ vec4 t = both(vUv); if (t.a * fade < 0.5) discard; vec3 lin = pow(t.rgb, vec3(2.2));
+          float rk = smoothstep(2.0, 2.8, lin.r / max(0.03, max(lin.g, lin.b))) * smoothstep(0.16, 0.3, lin.r);
+          gl_FragColor = vec4(0., 0., 0., 1.0 - rk * 0.95); }`,
+    });
+    return { col, keep };
+  }
+
+  // ---------------------------------------------------------------- the walker at rest: the painted angle set (same art as the stills), correct aspect
+  const ANG = ['front', 'front34L', 'sideL', 'back34R', 'back', 'back34L', 'sideR', 'front34L'], FLIP = [0, 0, 0, 0, 0, 0, 0, 1];
+  const FACE_COS = 0.5;
+  const sets = {};
+  function paintedStand(a, cam, rest) {
+    const D = a.D, u = a.mat.uniforms;
+    if (!rest) { if (a._ps) { a.mesh.scale.set(1, 1, 1); a.mesh.position.y = D.centerY; a._ps = false; } return; }
+    const set = sets[a.who] || (sets[a.who] = NR.actors.preload(a.who));
+    const cx = cam.position.x - a.pos.x, cz = cam.position.z - a.pos.z, cl = Math.hypot(cx, cz) || 1, tx = cx / cl, tz = cz / cl;
+    const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw), th = Math.atan2(fx * tz - fz * tx, fx * tx + fz * tz);
+    const k = ((Math.round(th / (Math.PI / 4)) % 8) + 8) % 8;
+    u.map.value = k === 0 ? set.idle[Math.floor(a.t * 8) % 12] : set.angle[ANG[k]]; u.rect.value.set(0, 0, 1, 1); u.flip.value = FLIP[k]; u.rimGain.value = 0;
+    // the stills are 384x768 (1:2) like the walker plane (1 x 2 m): one uniform scale to 1.86 m, feet on the floor
+    const h = 1.86; a.mesh.scale.set(h / D.world[1], h / D.world[1], 1); a.mesh.position.y = h / 2 - 0.02; a._ps = true;
+  }
+
+  // ---------------------------------------------------------------- a performance attached to a painted character
+  class Perf {
+    constructor(actor) {
+      this.a = actor; this.who = actor.who; const pu = actor.mat.uniforms;
+      this.u = { map: { value: null }, map2: { value: null }, st1: { value: 0 }, st2: { value: 0 }, mixK: { value: 0 }, fade: { value: 1 },
+        cookie: pu.cookie, lightVP: pu.lightVP, ambient: pu.ambient, key: pu.key, warm: pu.warm, keyGain: pu.keyGain, fogC: pu.fogC, fogD: pu.fogD, hit: pu.hit,
+        rimC: { value: new T.Color(0xffe2b0) }, rimK: { value: 0.0 }, rimDir: { value: new T.Vector2(0.006, 0.002) } };
+      const m = mats(this.u), g = new T.PlaneGeometry(1, 1);
+      this.mA = new T.Mesh(g, m.col); this.mB = new T.Mesh(g, m.keep); this.mA.renderOrder = 2; this.mB.renderOrder = 1;
+      this.mA.visible = this.mB.visible = false; actor.group.add(this.mA, this.mB);
+      this.cur = null; this.prev = null; this.mixT = 1; this.want = null; this.shown = false;
+    }
+    clipFor() { // which clip the story wants now
+      const G = NR.game, b = G.beat, st = NR.core.state;
+      if (this.who === 'vela') {
+        if (b === 'office_talk' && !this.stoleDone && AVAIL.has('vela_stole')) { const c = vids[CLIPS.vela_stole.file + (MODE === 'stack' ? '_stack' : '') + '_once']; if (!(c && c.v.failed)) return 'vela_stole'; this.stoleDone = true; }
+        if (b === 'office_light') return 'vela_smoke';
+        return VP.speaking('VELA') ? 'vela_talk' : 'vela_idle';
+      }
+      if (this.who === 'dolores') return 'dolores_idle';
+      void st; return null;
+    }
+    use(name) {
+      const spec = CLIPS[name]; if (!spec) return;
+      if (!AVAIL.has(spec.file)) { if (spec.once) this.stoleDone = true; if (name !== 'vela_idle' && AVAIL.has('vela_idle') && this.who === 'vela') return this.use('vela_idle'); return; }
+      const c = video(spec.file, MODE === 'stack', !spec.once); c.spec = spec; c.name = name;
+      if (this.cur === c || this.next === c) return;
+      if (spec.once && (c.v.failed || this.stoleDone)) { this.stoleDone = true; return; }
+      if (spec.once) { c.v.currentTime = 0; c.v.onended = () => { if (name === 'vela_stole') this.stoleDone = true; }; }
+      play(c); this.next = c;
+    }
+    update(dt, cam) {
+      if (MODE === 'off') return;
+      const a = this.a, framedNow = cam.fov <= FRAMED_FOV + 8;
+      // open lens: the full-length clip; close lens: the waist-up performance the story wants
+      // texture tier by screen footprint: her height in render pixels at this distance and lens
+      const dist = Math.hypot(cam.position.x - a.pos.x, cam.position.z - a.pos.z) || 1, rh = NR.core.renderer.domElement.height;
+      const px = 1.8 / (2 * dist * Math.tan(cam.fov * Math.PI / 360)) * rh;
+      this.small = VP.forceTier ? VP.forceTier === 'small' : this.small ? px < 1000 : px < 850;
+      const fullName = this.small && AVAIL.has('vela_full_640') ? 'vela_full_sm' : 'vela_full';
+      const name = framedNow ? this.clipFor() : (this.who === 'vela' && AVAIL.has('vela_full') && !(NR.game.beat === 'office_talk' && !this.stoleDone && AVAIL.has('vela_stole')) ? fullName : null);
+      if (name) this.use(name);
+      // swap in the wanted clip once it has a frame; cross-dissolve 0.35 s
+      if (this.next && live(this.next)) { if (this.cur && this.cur !== this.next) { this.prev = this.cur; this.mixT = 0; } this.cur = this.next; this.next = null; }
+      if (this.prev && this.mixT >= 1) { this.prev.v.pause(); this.prev = null; }
+      this.mixT = Math.min(1, this.mixT + dt / 0.35);
+      const cx = cam.position.x - a.pos.x, cz = cam.position.z - a.pos.z, cl = Math.hypot(cx, cz) || 1;
+      const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw), facing = (fx * cx + fz * cz) / cl; // 1 = she faces the camera
+      const framed = framedNow; this.facingOK = facing > FACE_COS;
+      const standing = !a.walking && (a.walkAmt || 0) < 0.05 && (!a.mode || a.mode === 'idle');
+      // her face can be seen (within 60 deg of her front): the filmed performance; full-length clip at the open lens
+      const on = !!this.cur && a.visible && standing && facing > FACE_COS && (framed ? !this.cur.spec.full : this.cur.spec.full);
+      this.shown = on; this.mA.visible = this.mB.visible = on; a.mesh.visible = !on;
+      if (a.D) paintedStand(a, cam, standing && !on); // the frame-animated walker: painted angle sprites at rest, never the mocap render
+      if (!on) { for (const c of [this.cur, this.next]) if (c && c.spec && c.spec.once && !c.v.paused) c.v.pause(); return; }
+      for (const c of [this.cur, this.prev]) if (c) { play(c); c.pump(); }
+      const u = this.u, s = this.cur.spec;
+      if (this.prev) { u.map.value = this.prev.tex; u.st1.value = this.prev.stacked ? 1 : 0; u.map2.value = this.cur.tex; u.st2.value = this.cur.stacked ? 1 : 0; u.mixK.value = this.mixT * this.mixT * (3 - 2 * this.mixT); }
+      else { u.map.value = this.cur.tex; u.st1.value = this.cur.stacked ? 1 : 0; u.map2.value = this.cur.tex; u.st2.value = u.st1.value; u.mixK.value = 0; }
+      // size from the head: hair-top-to-chin is HEAD metres; the top of the hair sits at the figure's height
+      const vw = this.cur.v.videoWidth || 512, vh = (this.cur.v.videoHeight || 896) / (this.cur.stacked ? 2 : 1);
+      const topY = (a.h || 1.86) * 0.968, H = s.full ? topY / (s.foot - s.top) : HEAD / (s.chin - s.top), W = H * vw / vh; // uniform: W/H is the clip's own aspect
+      for (const m of [this.mA, this.mB]) {
+        m.scale.set(W, H, 1); m.rotation.copy(a.mesh.rotation);
+        const off = (0.5 - s.cx) * W; m.position.set(Math.cos(m.rotation.y) * off, topY - H * (0.5 - s.top), -Math.sin(m.rotation.y) * off);
+      }
+      u.rimDir.value.set(0.006 * (a.level && a.level.rimSide || 1), 0.002);
+    }
+  }
+
+  // ---------------------------------------------------------------- hooks (no edits to the other modules)
+  const VP = NR.vperf = { MODE, CLIPS, AVAIL, forceTier: null, vids, Perf, speaking: () => false, stats() { return Object.values(vids).map(c => ({ src: c.v.currentSrc.split('/').pop(), rs: c.v.readyState, t: +c.v.currentTime.toFixed(2), paused: c.v.paused, w: c.v.videoWidth, h: c.v.videoHeight, failed: !!c.v.failed })); } };
+  let whoEl = null;
+  VP.speaking = (name) => { if (!whoEl || !whoEl.isConnected) whoEl = document.querySelector('#nru .who'); return !!(whoEl && whoEl.textContent === name && whoEl.closest('.on')); };
+  if (MODE !== 'off' && NR.actors) for (const K of [NR.actors.Painted, NR.actors.Walker]) { // the painted figure and the frame-animated walker
+    if (!K) continue; const P = K.prototype, up = P.update;
+    P.update = function (dt, cam) { up.call(this, dt, cam); if (!this.perf && (this.who === 'vela' || this.who === 'dolores')) this.perf = new Perf(this); this.perf && this.perf.update(dt, cam); };
+    const rm = P.remove; P.remove = function () { if (this.perf) { for (const c of [this.perf.cur, this.perf.prev, this.perf.next]) if (c) c.v.pause(); } return rm.call(this); };
+  }
+  // cinematic framing: while she talks to Harrow the lens tightens so the waist-up clips fill the frame
+  const FRAMED_BEATS = { office_talk: 1, office_light: 1, office_leave: 0, club_meet: 1 };
+  let fovNow = OPEN_FOV;
+  function frameCam(rdt) {
+    const G = NR.game, core = NR.core, cam = core.camera, P = NR.player;
+    let want = OPEN_FOV;
+    if (MODE !== 'off' && G && FRAMED_BEATS[G.beat] && core.state === 'CUTSCENE' && !(P && P.forceCig) && G.chars.some(c => c.perf && c.perf.facingOK && c.visible && !c.walking)) want = FRAMED_FOV;
+    if (G && G.beat === 'office_smoke' && core.state === 'CUTSCENE' && !(P && P.forceCig) && G.chars.some(c => c.perf && c.perf.facingOK && c.visible)) want = FRAMED_FOV;
+    fovNow += (want - fovNow) * Math.min(1, rdt * 2.2);
+    if (Math.abs(fovNow - want) < 0.05) fovNow = want;
+    if (Math.abs(cam.fov - fovNow) > 0.01) { cam.fov = fovNow; cam.updateProjectionMatrix(); }
+  }
+  if (NR.game && NR.game.update) {
+    const gu = NR.game.update; NR.game.update = function (dt, rdt) { gu.call(this, dt, rdt); try { frameCam(rdt); } catch (e) { console.error('[vperf]', e); } };
+  }
+
+  // ---------------------------------------------------------------- interrogation close-up: looping reactions per mood
+  function panel(who) {
+    const set = PANEL[who]; if (!set || MODE === 'off' || !Object.values(set).some(f => AVAIL.has(f))) return;
+    const pic = document.querySelector('#nru .itg .pic'); if (!pic) return;
+    const cv = document.createElement('canvas'); cv.className = 'vp'; pic.insertBefore(cv, pic.querySelector('.nm'));
+    const gl = cv.getContext('webgl', { premultipliedAlpha: false, alpha: false, preserveDrawingBuffer: false }); if (!gl) { cv.remove(); return; }
+    const vs = 'attribute vec2 p; varying vec2 v; void main(){ v = p * 0.5 + 0.5; gl_Position = vec4(p, 0., 1.); }';
+    const fs = `precision mediump float; uniform sampler2D a, b; uniform float k, bw, asp; uniform vec2 sc, of; varying vec2 v;
+      vec3 g(vec3 c){ if (bw < 0.5) return c; float l = dot(c, vec3(0.299, 0.587, 0.114)); float q = c.r / max(0.04, max(c.g, c.b)); float r = clamp((q - 2.0) / 0.8, 0., 1.) * clamp((c.r - 0.18) / 0.16, 0., 1.);
+        return mix(vec3(l), vec3(min(1., c.r * 1.08), c.g * 0.9, c.b * 0.9), r); }
+      void main(){ vec2 uv = vec2(v.x, 1.0 - v.y) * sc + of; vec3 c = mix(texture2D(a, uv).rgb, texture2D(b, uv).rgb, k); gl_FragColor = vec4(g(c), 1.); }`;
+    const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
+    const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(pr); gl.useProgram(pr);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const U = (n) => gl.getUniformLocation(pr, n);
+    gl.uniform1i(U('a'), 0); gl.uniform1i(U('b'), 1);
+    const texs = [0, 1].map(() => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); for (const [p, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, p, v); return t; });
+    const useMp4 = MODE === 'stack' || !canWebm;
+    const vs2 = {}; for (const m in set) { if (!AVAIL.has(set[m])) continue; const v = document.createElement('video'); v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto'; v.src = BASE + set[m] + (useMp4 && canMp4 ? '.mp4' : '.webm'); v.addEventListener('error', () => { v.failed = true; }); parkVideo(v); vs2[m] = v; }
+    const imgs = pic.querySelectorAll('img');
+    let cur = null, prev = null, k = 1, live2 = true, last = performance.now();
+    const pc = [document.createElement('canvas'), document.createElement('canvas')], pg = pc.map(c => c.getContext('2d'));
+    const grab = (i, v) => { const c = pc[i]; if (c.width !== v.videoWidth || c.height !== v.videoHeight) { c.width = v.videoWidth; c.height = v.videoHeight; } pg[i].drawImage(v, 0, 0); return c; };
+    VP.panelState = () => ({ cur: cur && cur.src.split('/').pop(), rs: cur && cur.readyState, t: cur && +cur.currentTime.toFixed(2), shown: cv.style.opacity });
+    const moodNow = () => { for (const im of imgs) if (im.classList.contains('on')) { const m = /(warm|guarded|cold)$/.exec(im.alt); if (m) return m[1]; } return 'guarded'; };
+    (function frame(now) {
+      const itg = pic.closest('.itg'); if (!live2 || !itg || !itg.classList.contains('on') || !pic.isConnected) { for (const m in vs2) { vs2[m].pause(); vs2[m].remove(); } live2 = false; cv.remove(); return; }
+      requestAnimationFrame(frame); const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const want = vs2[moodNow()];
+      if (!want) { cv.style.opacity = 0; if (cur) { cur.pause(); cur = null; } if (prev) { prev.pause(); prev = null; } return; } // no clip for this mood: the still shows
+      if (want && want !== cur && !want.failed) { if (want.paused) want.play().catch(() => {}); if (want.readyState >= 2) { prev = cur; cur = want; k = prev ? 0 : 1; } }
+      k = Math.min(1, k + dt / 0.45); if (prev && k >= 1) { prev.pause(); prev = null; }
+      if (!cur || cur.readyState < 2) return;
+      const w = pic.clientWidth, h = pic.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+      if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); gl.viewport(0, 0, cv.width, cv.height); }
+      // object-fit: cover, object-position 50% 22% (as the stills)
+      const va = cur.videoWidth / cur.videoHeight, ca = w / h; let sx = 1, sy = 1; if (va > ca) sx = ca / va; else sy = va / ca;
+      gl.uniform2f(U('sc'), sx, sy); gl.uniform2f(U('of'), (1 - sx) * 0.5, (1 - sy) * 0.22);
+      try {
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texs[0]); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, grab(0, prev || cur));
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texs[1]); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, grab(1, cur));
+      } catch (e) { return; }
+      gl.uniform1f(U('k'), prev ? k * k * (3 - 2 * k) : 1); gl.uniform1f(U('bw'), NR.core.settings.film === 'bwred' ? 1 : 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); cv.style.opacity = 1;
+    })(last);
+  }
+  const st = document.createElement('style');
+  st.textContent = '#nru .itg .pic canvas.vp{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .45s;pointer-events:none}';
+  document.head.appendChild(st);
+  if (NR.ui && NR.ui.interrogate) {
+    const it = NR.ui.interrogate; NR.ui.interrogate = function (who, data, found) { const p = it.call(this, who, data, found); try { panel(who); } catch (e) { console.error('[vperf panel]', e); } return p; };
+  }
 })();
 
 </script>

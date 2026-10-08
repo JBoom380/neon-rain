@@ -13,7 +13,8 @@
 #nru .obj::after{content:"";display:block;width:60px;height:1px;margin:6px auto 0;background:rgba(234,223,202,.5)}
 #nru .tl{position:absolute;left:12px;top:calc(10px + env(safe-area-inset-top,0px));font-family:"Courier New",monospace;font-weight:bold;font-size:12px;letter-spacing:.1em;line-height:1.7;text-shadow:0 1px 2px #000}
 #nru .cyl{display:flex;gap:3px;margin-bottom:2px}
-#nru .cyl b{width:9px;height:9px;border-radius:50%;background:#e8b040;box-shadow:0 0 4px rgba(232,176,64,.8)}
+#nru .cyl b{width:5px;height:12px;border-radius:2px 2px 1px 1px;background:#e8b040;box-shadow:0 0 4px rgba(232,176,64,.8)}
+#nru .cyl b.ch{margin-left:5px}
 #nru .cyl b.x{background:rgba(234,223,202,.18);box-shadow:none}
 #nru .tl .rl{color:#e8b040}
 #nru .tr{position:absolute;right:10px;top:calc(8px + env(safe-area-inset-top,0px));display:flex;gap:8px}
@@ -169,7 +170,7 @@
     E.obj = h('div', 'obj', '', E.hud);
     E.tl = h('div', 'tl', '<div class="cyl"></div><div class="rl"></div><div class="pk"></div><div class="lv"></div>', E.hud);
     E.cyl = E.tl.querySelector('.cyl'); E.rl = E.tl.querySelector('.rl'); E.pk = E.tl.querySelector('.pk'); E.lv = E.tl.querySelector('.lv');
-    for (let i = 0; i < 6; i++) h('b', '', null, E.cyl);
+    for (let i = 0; i < 8; i++) h('b', i === 7 ? 'ch' : '', null, E.cyl); // 7 in the magazine + 1 in the chamber
     E.tr = h('div', 'tr', '', E.hud);
     E.caseBtn = h('div', 'ib', 'CASE', E.tr); onTap(E.caseBtn, () => NR.game.openCase());
     E.pauseBtn = h('div', 'ib', '| |', E.tr); onTap(E.pauseBtn, () => NR.game.pause(true));
@@ -227,8 +228,9 @@
       try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
       const g = document.createElement('div'); g.id = 'nrgate';
       g.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;padding-bottom:16vh;background:rgba(0,0,0,.6);font-family:"Courier New",monospace;color:#eadfca;letter-spacing:6px;font-size:18px;text-shadow:0 0 10px #b8241c;cursor:pointer;touch-action:none';
-      g.innerHTML = '<span style="animation:nrblink 1.6s steps(2) infinite">TAP TO ENTER</span>';
-      const go = (e) => { if (e) { e.preventDefault(); e.stopPropagation(); } NR.audio.unlock(); g.remove(); removeEventListener('keydown', go, true); res(); };
+      g.innerHTML = '<span style="animation:nrblink 1.6s steps(2) infinite">' + (window.READY ? 'TAP TO ENTER' : 'LOADING THE CITY') + '</span>';
+      const lab = g.querySelector('span'); if (!window.READY) { const iv = setInterval(() => { if (window.READY) { lab.textContent = 'TAP TO ENTER'; clearInterval(iv); } }, 100); }
+      const go = (e) => { if (e) { e.preventDefault(); e.stopPropagation(); } if (!window.READY) return; NR.audio.unlock(); g.remove(); removeEventListener('keydown', go, true); res(); };
       g.addEventListener('click', go); g.addEventListener('touchend', go); addEventListener('keydown', go, true);
       document.body.appendChild(g);
     });
@@ -285,13 +287,13 @@
     E.hud.classList.toggle('on', play);
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) E.toast.classList.remove('on'); }
     if (!play) return;
-    E.cyl.style.display = P.armed ? 'flex' : 'none';
-    if (P.rounds !== vRounds) { vRounds = P.rounds; E.cyl.querySelectorAll('b').forEach((b, i) => b.classList.toggle('x', i >= P.rounds)); }
-    const rel = P.reloadT > 0 ? 'RELOADING' : (P.armed && P.rounds === 0 ? 'RELOAD' : '');
+    E.cyl.style.display = P.armed && P.drawn ? 'flex' : 'none'; E.rl.style.display = P.armed && P.drawn ? 'block' : 'none';
+    const rk = P.rounds + '/' + P.mags; if (rk !== vRounds) { vRounds = rk; E.cyl.querySelectorAll('b').forEach((b, i) => b.classList.toggle('x', i === 7 ? P.rounds < 8 : i >= Math.min(7, P.rounds))); }
+    const rel = P.reloadT > 0 ? 'RELOADING  MAGS ' + P.mags : (P.armed && P.slideLock ? 'SLIDE LOCKED: RELOAD' : (P.armed ? 'MAGS ' + P.mags : ''));
     if (rel !== vRel) { vRel = rel; E.rl.textContent = rel; }
     if (P.pack !== vPack) { vPack = P.pack; E.pk.textContent = 'SMOKES ' + P.pack; }
     if (P.lives !== vLives) { vLives = P.lives; E.lv.textContent = 'LIVES ' + '◆'.repeat(Math.max(0, P.lives)) + '◇'.repeat(Math.max(0, C.LIVES - P.lives)); }
-    const a = P.armed && P.assistTarget(0.035); E.xh.classList.toggle('on', !!a); E.xh.style.display = P.armed ? 'block' : 'none';
+    const a = P.armed && P.drawn && P.assistTarget(0.035); E.xh.classList.toggle('on', !!a); E.xh.style.display = P.armed && P.drawn ? 'block' : 'none';
     if (hitT > 0) { hitT -= dt; E.xh.classList.add('hit'); } else E.xh.classList.remove('hit');
     const sc = NR.game.scanProgress || 0; E.scanbar.style.display = sc > 0 ? 'block' : 'none';
     if (sc > 0) E.scanbar.style.background = 'conic-gradient(#e8b040 0 ' + (sc * 100).toFixed(0) + '%,rgba(232,176,64,.15) ' + (sc * 100).toFixed(0) + '% 100%)', E.scanbar.style.webkitMask = E.scanbar.style.mask = 'radial-gradient(circle,transparent 58%,#000 60%)';
@@ -330,7 +332,7 @@
     const S = NR.story; return new Promise(resolve => {
       const el = E.itg; el.innerHTML = '';
       const pic = h('div', 'pic', '', el); const imgs = {};
-      for (const m of ['warm', 'guarded', 'cold']) { const im = h('img', '', null, pic); const u = NR.CLOSE(who, m); im.alt = data.name + ' ' + m; imgs[m] = im; if (core.settings.bw) noirSrc(u).then(s => { im.src = s; }); else im.src = u; }
+      for (const m of ['warm', 'guarded', 'cold']) { const im = h('img', '', null, pic); const u = NR.CLOSE(who, m); im.alt = data.name + ' ' + m; imgs[m] = im; if (core.settings.film === 'bwred') noirSrc(u).then(s => { im.src = s; }); else im.src = u; }
       h('div', 'nm', data.name + '<small>' + data.role + '</small>', pic);
       const smk = h('div', 'smk', '', pic);
       const met = h('div', 'met', '<div>PULSE <span class="val pv">--</span><canvas width="240" height="52"></canvas></div><div>EYES <span class="val ev">--</span><div class="bar"><i class="eb"></i></div></div><div>HESITATION <span class="val hv">--</span><div class="bar"><i class="hb"></i></div></div>', el);
@@ -404,7 +406,7 @@
   }
   function show(name, on) { const m = { pause: E.pause, title: E.title }; if (m[name]) m[name].classList.toggle('on', on); }
 
-  const UI = NR.ui = { init(c) { core = c; build(); }, gate, title, say, lines, card, tutorial, letterbox, toast, objective, prompt, update, caseFile, interrogate, gameOver, endCard, show, settingsOpen, fast: false, get el() { return E; } };
+  const UI = NR.ui = { eye: (s) => NR.eye.play(s), init(c) { core = c; build(); }, gate, title, say, lines, card, tutorial, letterbox, toast, objective, prompt, update, caseFile, interrogate, gameOver, endCard, show, settingsOpen, fast: false, get el() { return E; } };
 })();
 
 // NEON RAIN jukebox (landing menu), in the menu's own style. Three switchable designs: ?jb=a (inline list),
@@ -471,4 +473,57 @@
   function close() { open = false; NR.ui.el.jb.classList.remove('on'); NR.ui.el.title.classList.remove('jbopen'); }
   async function openPanel() { await A().loadTracks(); open = true; NR.ui.el.title.classList.add('jbopen'); render(); if (!raf) tick(); A().setOnEnded(onEnd); }
   NR.jukebox = { open: openPanel, close, play, next, prev, toggle, render, variant: V, get isOpen() { return open; }, get index() { return idx; }, get list() { return list; }, get shuffle() { return shuffle; }, get repeat() { return repeat; } };
+})();
+
+// NEON RAIN eye transition: an extreme close-up of an eye (original ComfyUI still, assets/eye/eye.jpg) with a slow push-in;
+// the city's lights drift and twinkle in the iris (drawn live, clipped to the iris). Used after the menu and between chapters.
+(function () {
+  const IRIS = { x: 512, y: 492, r: 300 }, PUPIL = 95, N = 220;
+  let el = null, img = null, cv = null, g = null;
+  const rng = NR.rng(77), lights = [];
+  for (let i = 0; i < N; i++) { const band = rng(); const warm = rng() < 0.78;
+    lights.push({ u: rng() * 2.4 - 1.2, v: -0.05 + Math.pow(band, 0.7) * 0.5 - (rng() < 0.25 ? rng() * 0.35 : 0), s: 0.6 + rng() * 1.8, ph: rng() * 6.28, sp: 0.6 + rng() * 3,
+      c: warm ? [255, 170 + rng() * 50 | 0, 80 + rng() * 40 | 0] : (rng() < 0.7 ? [90, 230, 255] : [255, 70, 60]) }); }
+  function build() {
+    const st = document.createElement('style');
+    st.textContent = '#nreye{position:fixed;inset:0;z-index:40;background:#000;overflow:hidden;opacity:0;pointer-events:auto;display:none}#nreye.on{display:block}' +
+      '#nreye .lay{position:absolute;transform-origin:50% 48%}#nreye img,#nreye canvas{position:absolute;inset:0;width:100%;height:100%}#nreye canvas{mix-blend-mode:screen}';
+    document.head.appendChild(st);
+    el = document.createElement('div'); el.id = 'nreye'; el.innerHTML = '<div class="lay"><img alt=""><canvas width="1024" height="1024"></canvas></div>';
+    document.body.appendChild(el); img = el.querySelector('img'); img.src = NR.ASSET + 'eye/eye.jpg'; cv = el.querySelector('canvas'); g = cv.getContext('2d');
+  }
+  function layout() { const vw = innerWidth, vh = innerHeight, S = Math.max(vw, vh) * 1.08, L = el.querySelector('.lay');
+    Object.assign(L.style, { width: S + 'px', height: S + 'px', left: (vw / 2 - S * IRIS.x / 1024) + 'px', top: (vh / 2 - S * IRIS.y / 1024) + 'px' }); }
+  function draw(t) {
+    g.clearRect(0, 0, 1024, 1024); g.save(); g.beginPath(); g.arc(IRIS.x, IRIS.y, IRIS.r, 0, 7); g.clip();
+    const drift = t * 0.045;
+    for (const L of lights) {
+      let u = ((L.u + drift + 1.2) % 2.4) - 1.2, v = L.v; const k = 1 / (1 + 0.3 * (u * u + v * v));       // convex cornea: fisheye squeeze
+      const x = IRIS.x + u * k * IRIS.r * 0.95, y = IRIS.y + v * k * IRIS.r * 0.95 + 40;
+      const tw = 0.55 + 0.45 * Math.sin(t * L.sp + L.ph), a = tw * (Math.hypot(x - IRIS.x, y - IRIS.y) < PUPIL ? 1 : 0.7);
+      const r = L.s * k * 2.2, gr = g.createRadialGradient(x, y, 0, x, y, r * 3);
+      gr.addColorStop(0, `rgba(${L.c[0]},${L.c[1]},${L.c[2]},${a})`); gr.addColorStop(0.35, `rgba(${L.c[0]},${L.c[1]},${L.c[2]},${a * 0.35})`); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6);
+    }
+    // a hover cruiser's light crossing the reflection
+    const cx = IRIS.x - IRIS.r + ((t * 0.18) % 1.4) * IRIS.r * 1.6, cy = IRIS.y - IRIS.r * 0.32 + Math.sin(t * 0.7) * 10;
+    for (const [dx, col, rr] of [[0, '255,250,235', 14], [-26, '255,60,50', 6], [22, '120,200,255', 6]]) { const gr = g.createRadialGradient(cx + dx, cy, 0, cx + dx, cy, rr * 3); gr.addColorStop(0, `rgba(${col},0.95)`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(cx + dx - rr * 3, cy - rr * 3, rr * 6, rr * 6); }
+    g.restore();
+  }
+  // play the transition; resolves when done (tap to skip)
+  function play(secs = 4.4) {
+    if (!el) build(); layout(); el.classList.add('on');
+    const dur = NR.ui && NR.ui.fast ? 0.4 : secs, lay = el.querySelector('.lay');
+    return new Promise(res => {
+      const t0 = performance.now(); let done = false;
+      const end = () => { if (done) return; done = true; el.removeEventListener('pointerup', end); el.classList.remove('on'); el.style.opacity = 0; res(); };
+      el.addEventListener('pointerup', end);
+      (function frame(now) { if (done) return; const t = (now - t0) / 1000, f = Math.min(1, t / dur);
+        el.style.opacity = Math.min(1, t / 0.7, (dur - t) / 0.8).toFixed(3);
+        const e = f * f * (3 - 2 * f); lay.style.transform = 'scale(' + (1 + e * 0.38).toFixed(4) + ')';
+        draw(t + 3); if (t >= dur) end(); else requestAnimationFrame(frame); })(t0);
+      if (NR.audio && NR.audio.fx && NR.audio.fx.focus) NR.audio.fx.focus();
+    });
+  }
+  NR.eye = { play, IRIS };
 })();

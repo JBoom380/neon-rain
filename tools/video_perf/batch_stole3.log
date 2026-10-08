@@ -1,0 +1,9 @@
+  File "C:\Users\John\Documents\GitHub\projects\neon-rain-fps\tools\video_perf\gen.py", line 8
+    def if mode == "ltx" and len(sys.argv) > 9:
+        ^^
+SyntaxError: invalid syntax
+  File "C:\Users\John\Documents\GitHub\projects\neon-rain-fps\tools\video_perf\gen.py", line 8
+    def if mode == "ltx" and len(sys.argv) > 9:
+        ^^
+SyntaxError: invalid syntax
+KLEINDONE

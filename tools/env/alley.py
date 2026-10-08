@@ -37,6 +37,13 @@ M = dict(
     frame=flat('winframe', (0.08, 0.06, 0.05), rough=0.6),
     doorwood=pbr('doorwood', 'dark_wooden_planks', tint=(0.4, 0.3, 0.24)),
     bulb=flat('bulb', (1, 0.9, 0.7), emit=INCAND, emit_strength=30.0),
+    awn1=flat('awn1', (0.32, 0.05, 0.04), rough=0.7),
+    awn2=flat('awn2', (0.05, 0.2, 0.2), rough=0.7),
+    awn3=flat('awn3', (0.35, 0.22, 0.05), rough=0.7),
+    stallwood=pbr('stallwood', 'dark_wooden_planks', tint=(0.6, 0.45, 0.32)),
+    lantern=flat('lantern', (0.9, 0.3, 0.1), emit=(1.0, 0.32, 0.08), emit_strength=6.0),
+    menu=flat('menu', (0.8, 0.6, 0.3), emit=(1.0, 0.7, 0.35), emit_strength=1.5),
+    pot=flat('pot', (0.2, 0.2, 0.21), rough=0.35, metal=0.9),
     sodlamp=flat('sodlamp', (1, 0.6, 0.2), emit=SODIUM, emit_strength=40.0),
 )
 NEONM = {}
@@ -201,13 +208,13 @@ for (x, z) in ((HW - 0.6, -31), (-HW + 0.5, -5)):
     br = ph('barrel_03', (0, 0, 0), ry_deg=rnd.uniform(0, 360), target=1200); place_bottom(br, x, 0, z); PROPS.append(br)
     collide((x - 0.35, 0, z - 0.35), (x + 0.35, 0.9, z + 0.35), cover=True, tag='barrel')
 # trash cans + bags along the walls (small colliders, not cover)
-for (x, z) in ((HW - 0.45, -3.2), (-HW + 0.45, -16.6), (HW - 0.45, -25.4), (-HW + 0.45, -34.5)):
+for (x, z) in ((HW - 0.45, -8.2), (-HW + 0.45, -16.6), (HW - 0.45, -25.4), (-HW + 0.45, -34.5)):
     can = ph('metal_trash_can', (0, 0, 0), exact=['metal_trash_can', 'metal_trash_can_handle_left', 'metal_trash_can_handle_right'], target=2200)
     place_bottom(can, x, 0, z); PROPS.append(can)
     lo, hi = bbox(can)
     PROPS.append(lathe('canlid', [(0, 0), (0.29, 0), (0.29, 0.03), (0.2, 0.06), (0.03, 0.07), (0.03, 0.1), (0, 0.1)], (x + 0.03, hi.z - 0.005, z - 0.02), M['rust'], seg=20))
     collide((x - 0.3, 0, z - 0.3), (x + 0.3, 0.9, z + 0.3), tag='can')
-for (x, z) in ((HW - 0.5, -4.1), (-HW + 0.6, -33.6), (2.6, -35.6)):
+for (x, z) in ((HW - 0.5, -9.0), (-HW + 0.6, -33.6), (2.6, -35.6)):
     tb = ph('trashbag', (0, 0, 0), ry_deg=rnd.uniform(0, 360), target=900); place_bottom(tb, x, 0, z); PROPS.append(tb)
 tyre = ph('old_tyre', (0, 0, 0), target=900); tyre.rotation_euler = (math.radians(80), 0, 0.3); apply_xform(tyre); place_bottom(tyre, -2.7, 0, -8.0); PROPS.append(tyre)
 mh = ph('water_manhole_cover', (0, 0, 0), target=1200); place_bottom(mh, 0.4, -0.015, -19.0); PROPS.append(mh)
@@ -221,6 +228,8 @@ def blade(text, col, cname, x, z, y0, height, out=1.0, size=0.42):
     for y in (y0 + 0.25, y0 + height - 0.25):
         PROPS.append(box('bracket', (min(x, xin), y - 0.03, z - 0.03), (max(x, xin), y + 0.03, z + 0.03), M['steel']))
     PROPS.append(tube_path('brace', [(x - s * 0.02, y0 + height + 0.45, z), (xout + s * 0.1, y0 + height, z)], 0.015, M['steel']))
+    for face in (1, -1):   # deco border: stepped gold frame on both faces
+        PROPS.extend(deco_stepped_frame('sframe', 'z', (cx, y0 + height / 2, z + face * 0.115), abs(out) + 0.02, height + 0.02, t=0.03, d=0.012, steps=1))
     nm = neon_mat(col, cname)
     for face in (1, -1):
         zf = z + face * 0.125
@@ -251,6 +260,115 @@ light('SPOT', (2.1, LAMP_TOP - 0.45, -36.6), SODIUM, 3200, radius=0.12, gaim=(1.
 light('POINT', (2.1, LAMP_TOP - 0.4, -36.6), SODIUM, 160, radius=0.15, name='sodium_glow')
 light('SPOT', (-6.0, 7.0, Z1 - 8.0), SODIUM, 9000, radius=0.3, gaim=(0, 0, Z1 - 2), spot_deg=60, blend=0.5, name='street_far')
 light('AREA', (0, 14, -18), SODIUM_HP, 160, gaim=(0, 0, -18), size=(5, 40), name='sky_fill')
+
+
+# ---------------------------------------------------------------- density pass: made-up neon glyph signs, awnings, a noodle stall
+GRND = random.Random(42)
+GPTS = [(-0.5, 0.5), (0, 0.5), (0.5, 0.5), (-0.5, 0), (0, 0), (0.5, 0), (-0.5, -0.5), (0, -0.5), (0.5, -0.5)]
+
+
+def glyph(cx, cy, z, s, nm, face, seed):
+    """An invented character: 2-4 tube strokes on a 3x3 grid (never a real script)."""
+    r = random.Random(seed)
+    for _ in range(r.randint(2, 4)):
+        a, b = r.sample(range(9), 2)
+        path = [GPTS[a], GPTS[b]]
+        if r.random() < 0.4:
+            path.append(GPTS[r.randrange(9)])
+        NEON.append(tube_path('glyph', [(cx + px * s * face, cy + py * s, z) for px, py in path], 0.008, nm))
+
+
+def glyph_blade(x, z, y0, height, col, cname, n, out=0.75, seed=0):
+    s_ = -1 if x < 0 else 1
+    xin, xout = x - s_ * 0.18, x - s_ * (0.18 + out)
+    cx = (xin + xout) / 2
+    PROPS.append(box('gsign', (min(xin, xout), y0, z - 0.09), (max(xin, xout), y0 + height, z + 0.09), M['cabinet'], bevel=0.015))
+    for face in (1, -1):
+        PROPS.extend(deco_stepped_frame('gframe', 'z', (cx, y0 + height / 2, z + face * 0.095), out + 0.02, height + 0.02, t=0.025, d=0.01, steps=1))
+    for y in (y0 + 0.2, y0 + height - 0.2):
+        PROPS.append(box('gbr', (min(x, xin), y - 0.025, z - 0.025), (max(x, xin), y + 0.025, z + 0.025), M['steel']))
+    nm = neon_mat(col, cname)
+    step = (height - 0.2) / n
+    for face in (1, -1):
+        zf = z + face * 0.1
+        for i in range(n):
+            glyph(cx, y0 + height - 0.1 - step * (i + 0.5), zf, min(step * 0.62, out * 0.55), nm, face, seed * 31 + i)
+        bw = abs(out) - 0.1
+        NEON.append(tube_path('gborder', [(cx - bw / 2, y0 + 0.05, zf), (cx + bw / 2, y0 + 0.05, zf), (cx + bw / 2, y0 + height - 0.05, zf), (cx - bw / 2, y0 + height - 0.05, zf), (cx - bw / 2, y0 + 0.05, zf)], 0.007, nm))
+    for face in (1, -1):
+        light('AREA', (cx, y0 + height / 2, z + face * 0.25), col, 28 * height, gaim=(cx, y0 + height / 2 - 0.3, z + face * 3), size=(abs(out), height * 0.9), name='neon_' + cname)
+
+
+def wall_sign(x, z, y, w, h, col, cname, n, seed):
+    """A sign box flush on the wall with a row of invented glyphs."""
+    s_ = -1 if x < 0 else 1
+    xf = x - s_ * 0.12
+    PROPS.append(box('wsign', (min(x, xf), y, z - w / 2), (max(x, xf), y + h, z + w / 2), M['cabinet'], bevel=0.01))
+    nm = neon_mat(col, cname)
+    xg = xf - s_ * 0.015
+    step = w / n
+    for i in range(n):
+        zc = z - w / 2 + step * (i + 0.5)
+        r = random.Random(seed * 17 + i)
+        for _ in range(r.randint(2, 4)):
+            a, b = r.sample(range(9), 2); sz = min(step, h) * 0.6
+            NEON.append(tube_path('wglyph', [(xg, y + h / 2 + GPTS[a][1] * sz, zc + GPTS[a][0] * sz), (xg, y + h / 2 + GPTS[b][1] * sz, zc + GPTS[b][0] * sz)], 0.008, nm))
+    light('AREA', (xg - s_ * 0.2, y + h / 2, z), col, 22 * w, gaim=(0, y - 1.0, z), size=(0.3, w), name='neon_' + cname)
+
+
+AMBER, CYAN, GREEN, MAG = (1.0, 0.45, 0.05), (0.05, 0.75, 1.0), (0.2, 1.0, 0.25), (1.0, 0.08, 0.6)
+for (x, z, y0, hgt, col, cn, n) in ((HW, -4.2, 4.4, 2.2, CYAN, 'g_cyan', 4), (-HW, -12.2, 4.2, 2.6, GREEN, 'g_green', 5), (HW, -20.0, 3.6, 1.9, AMBER, 'g_amber', 3),
+                                    (-HW, -17.5, 6.2, 2.4, MAG, 'g_mag', 4), (HW, -9.6, 6.4, 2.0, NEON_RED, 'g_red', 3), (-HW, -31.0, 3.4, 2.2, CYAN, 'g_cyan', 4),
+                                    (HW, -26.0, 6.0, 2.6, GREEN, 'g_green', 5), (-HW, -2.8, 5.6, 1.8, AMBER, 'g_amber', 3)):
+    glyph_blade(x, z, y0, hgt, col, cn, n, seed=int(abs(z) * 10))
+for (x, z, y, w, h, col, cn, n) in ((-HW, -10.5, 2.6, 1.6, 0.42, AMBER, 'g_amber', 4), (HW, -19.2, 2.55, 1.4, 0.38, MAG, 'g_mag', 3),
+                                    (-HW, -26.0, 2.55, 1.2, 0.36, CYAN, 'g_cyan', 3), (HW, -29.0, 2.7, 1.8, 0.42, NEON_RED, 'g_red', 4)):
+    wall_sign(x, z, y, w, h, col, cn, n, int(abs(z) * 7))
+# warm orange bar lights on the walls
+for (x, z, y) in ((-HW, -14.8, 2.5), (HW, -11.8, 2.4), (-HW, -21.8, 2.5), (HW, -33.2, 2.5)):
+    s_ = -1 if x < 0 else 1
+    NEON.append(box('wallbar', (min(x, x - s_ * 0.06), y, z - 0.45), (max(x, x - s_ * 0.06), y + 0.07, z + 0.45), neon_mat(AMBER, 'g_amber')))
+    light('AREA', (x - s_ * 0.2, y, z), (1.0, 0.5, 0.1), 40, gaim=(0, y - 1, z), size=(0.1, 0.9), name='wallbar')
+# awnings over the doorways: sloped canvas, valance, two struts
+for (x, z, m) in ((-HW, -9, 'awn1'), (HW, -17, 'awn2'), (-HW, -27, 'awn3')):
+    s_ = -1 if x < 0 else 1
+    xm = x - s_ * 0.55
+    bm = bmesh.new()
+    vs = [bm.verts.new(G(*p)) for p in ((x, 2.95, z - 0.9), (x, 2.95, z + 0.9), (x - s_ * 1.1, 2.55, z + 0.9), (x - s_ * 1.1, 2.55, z - 0.9))]
+    bm.faces.new(vs)
+    aw = mesh_obj('awning', bm, M[m]); box_uv(aw, 0.6)
+    sol = aw.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.02; select_only([aw]); bpy.ops.object.modifier_apply(modifier='s')
+    PROPS.append(aw)
+    PROPS.append(box('valance', (min(x - s_ * 1.08, x - s_ * 1.11), 2.36, z - 0.9), (max(x - s_ * 1.08, x - s_ * 1.11), 2.56, z + 0.9), M[m]))
+    for dz in (-0.85, 0.85):
+        PROPS.append(tube_path('strut', [(x, 3.05, z + dz), (x - s_ * 1.08, 2.58, z + dz)], 0.012, M['steel']))
+# a noodle stall near the entrance (right side): counter, canopy, stools, stove and pot, paper lanterns, menu board
+SX0, SX1, SZ0, SZ1 = 1.75, 3.15, -4.6, -1.7
+PROPS.append(box('stallctr', (SX0, 0, SZ0), (SX0 + 0.55, 1.0, SZ1), M['stallwood'], tile=0.8, bevel=0.01))
+PROPS.append(box('stalltop', (SX0 - 0.08, 1.0, SZ0 - 0.05), (SX0 + 0.6, 1.05, SZ1 + 0.05), M['stallwood'], bevel=0.008))
+PROPS.append(box('stallback', (SX1 - 0.1, 0, SZ0), (SX1, 2.4, SZ1), M['stallwood'], tile=0.8))
+for zz in (SZ0, SZ1 - 0.05):
+    PROPS.append(box('stallpost', (SX0 - 0.05, 0, zz), (SX0, 2.45, zz + 0.05), M['steel']))
+bm = bmesh.new()
+vs = [bm.verts.new(G(*p)) for p in ((SX1, 2.6, SZ0 - 0.15), (SX1, 2.6, SZ1 + 0.15), (SX0 - 0.35, 2.4, SZ1 + 0.15), (SX0 - 0.35, 2.4, SZ0 - 0.15))]
+bm.faces.new(vs); can_ = mesh_obj('canopy', bm, M['awn1']); box_uv(can_, 0.6)
+sol = can_.modifiers.new('s', 'SOLIDIFY'); sol.thickness = 0.02; select_only([can_]); bpy.ops.object.modifier_apply(modifier='s')
+PROPS.append(can_)
+PROPS.append(box('menuboard', (SX1 - 0.12, 1.4, SZ0 + 0.3), (SX1 - 0.1, 2.0, SZ1 - 0.3), M['menu']))
+PROPS.append(box('stove', (SX0 + 0.6, 0, SZ0 + 0.4), (SX0 + 1.1, 1.0, SZ0 + 1.0), M['steel']))
+PROPS.append(lathe('stockpot', [(0, 0), (0.18, 0), (0.18, 0.28), (0.17, 0.28), (0.17, 0.02), (0, 0.02)], (SX0 + 0.85, 1.0, SZ0 + 0.7), M['pot'], seg=14))
+for zz in (SZ0 + 0.5, (SZ0 + SZ1) / 2, SZ1 - 0.5):
+    PROPS.append(lathe('lantern', [(0, 0), (0.1, 0.03), (0.13, 0.15), (0.1, 0.28), (0, 0.3)], (SX0 - 0.15, 1.95, zz), M['lantern'], seg=12))
+    PROPS.append(cyl('lstring', (SX0 - 0.15, 2.25, zz), 0.004, 0.2, M['steel'], seg=4))
+    light('POINT', (SX0 - 0.15, 2.08, zz), (1.0, 0.35, 0.08), 18, radius=0.1, name='lantern')
+    PROPS.append(cyl('stoolp', (SX0 - 0.45, 0, zz), 0.03, 0.7, M['steel'], seg=8))
+    PROPS.append(cyl('stools', (SX0 - 0.45, 0.68, zz), 0.17, 0.05, M['stallwood'], seg=14))
+collide((SX0, 0, SZ0), (SX1, 1.0, SZ1), cover=True, tag='stall')
+# more overhead cables, sagging, at several heights
+for k in range(9):
+    z = -2 - k * 4.2 + GRND.uniform(-1, 1)
+    y1, y2 = GRND.uniform(5.5, 9.5), GRND.uniform(5.5, 9.5)
+    PROPS.append(tube_path('cable2', [(-HW, y1, z), (-1, min(y1, y2) - 0.8, z + 0.3), (1, min(y1, y2) - 0.8, z + 0.6), (HW, y2, z + GRND.uniform(-1.5, 1.5))], 0.01, M['steel']))
 
 bpy.context.scene['colliders'] = json.dumps(COL)
 print('[alley] tris shell', sum(tris(o) for o in SHELL + SHELL_HI), 'props', sum(tris(o) for o in PROPS), 'neon', sum(tris(o) for o in NEON))

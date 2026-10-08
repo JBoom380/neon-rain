@@ -4,7 +4,7 @@
   const T = THREE, V3 = (x, y, z) => new T.Vector3(x, y, z);
   const U = { time: { value: 0 } };
   const DPR = () => Math.min(devicePixelRatio || 1, 2);
-  const BLOOD = { human: 0x6e0505, artificial: 0xe4e0d0 };
+  const BLOOD = { human: 0x4c0303, artificial: 0xe4e0d0 }; // dark arterial red (the noir grade lifts reds; keep the base deep)
 
   function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; return t; }
 
@@ -82,16 +82,17 @@
 
   // ---------------------------------------------------------------- per-level dynamic fx: decals, spray, tracers, flash light
   const splatTex = canvasTex(128, 128, (g, w, h) => {
-    g.clearRect(0, 0, w, h); g.fillStyle = '#fff';
+    g.clearRect(0, 0, w, h); g.fillStyle = '#fff'; g.filter = 'blur(1.5px)';
     g.beginPath(); g.arc(64, 64, 22, 0, 7); g.fill();
     for (let i = 0; i < 22; i++) { const a = Math.random() * 6.28, d = 18 + Math.random() * 38, r = 2 + Math.random() * 8; g.beginPath(); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, r * (1 - d / 70), 0, 7); g.fill(); }
     for (let i = 0; i < 6; i++) { const a = Math.random() * 6.28; g.lineWidth = 3 + Math.random() * 4; g.strokeStyle = '#fff'; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + Math.cos(a) * 50, 64 + Math.sin(a) * 50); g.stroke(); }
   });
-  const poolTex = canvasTex(128, 128, (g) => { g.fillStyle = '#fff'; g.beginPath(); for (let i = 0; i < 7; i++) { const a = Math.random() * 6.28, d = Math.random() * 18; g.moveTo(64 + Math.cos(a) * d + 30, 64 + Math.sin(a) * d); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 26 + Math.random() * 12, 0, 7); } g.fill(); });
+  const poolTex = canvasTex(128, 128, (g) => { g.fillStyle = '#fff'; g.filter = 'blur(3px)'; g.beginPath(); for (let i = 0; i < 7; i++) { const a = Math.random() * 6.28, d = Math.random() * 18; g.moveTo(64 + Math.cos(a) * d + 30, 64 + Math.sin(a) * d); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 26 + Math.random() * 12, 0, 7); } g.fill(); });
   let L = null, decals = {}, pools = {}, spray = null, tracers = [], flashLight = null, wounds = [];
   const MAXD = 72, MAXP = 24, MAXS = 220;
   function decalMesh(tex, color, n, lit) {
-    const m = new T.InstancedMesh(new T.PlaneGeometry(1, 1), new T.MeshLambertMaterial({ color, map: tex, transparent: true, depthWrite: false, alphaTest: 0.35, polygonOffset: true, polygonOffsetFactor: -4, emissive: lit ? color : 0, emissiveIntensity: lit ? 0.12 : 0 }), n);
+    // wet blood: dark, glossy, soft-edged (lit by the scene, never flat)
+    const m = new T.InstancedMesh(new T.PlaneGeometry(1, 1), new T.MeshStandardMaterial({ color, map: tex, transparent: true, depthWrite: false, alphaTest: 0.04, roughness: lit ? 0.6 : 0.18, metalness: 0, polygonOffset: true, polygonOffsetFactor: -4, emissive: lit ? color : 0, emissiveIntensity: lit ? 0.12 : 0 }), n);
     m.count = 0; m.frustumCulled = false; m.renderOrder = 2; m.userData.next = 0; m.userData.grow = []; return m;
   }
   function attach(level) {
@@ -99,13 +100,13 @@
     if (!level.fxReady) {
       level.fx = {
         decals: { human: decalMesh(splatTex, BLOOD.human, MAXD), artificial: decalMesh(splatTex, BLOOD.artificial, MAXD, true) },
-        pools: { human: decalMesh(poolTex, 0x4a0303, MAXP), artificial: decalMesh(poolTex, 0xd8d4c4, MAXP, true) },
+        pools: { human: decalMesh(poolTex, 0x2a0202, MAXP), artificial: decalMesh(poolTex, 0xd8d4c4, MAXP, true) },
       };
       for (const k in level.fx.decals) S.add(level.fx.decals[k]); for (const k in level.fx.pools) S.add(level.fx.pools[k]);
       // spray particles
       const geo = new T.BufferGeometry(); const pos = new Float32Array(MAXS * 3), col = new Float32Array(MAXS * 3);
       geo.setAttribute('position', new T.BufferAttribute(pos, 3)); geo.setAttribute('color', new T.BufferAttribute(col, 3));
-      const pm = new T.PointsMaterial({ size: 0.05, vertexColors: true, sizeAttenuation: true, transparent: true, depthWrite: false });
+      const pm = new T.PointsMaterial({ size: 0.045, vertexColors: true, sizeAttenuation: true, transparent: true, depthWrite: false, map: NR.world && NR.world.glowTex, alphaTest: 0.03 }); // soft round droplets
       const pts = new T.Points(geo, pm); pts.frustumCulled = false; S.add(pts);
       level.fx.spray = { pts, pos, col, vel: new Float32Array(MAXS * 3), life: new Float32Array(MAXS), next: 0 };
       // tracers

@@ -51,6 +51,8 @@ M = dict(
     frame=pbr('frame', 'black_painted_planks', tint=(0.32, 0.24, 0.18)),
     doorglass=imgmat('doorglass', TEX / 'door_glass.png', rough=0.3, emit_strength=0.08),
     hatband=flat('hatband', (0.03, 0.025, 0.02), rough=0.7),
+    tube=flat('tube', (0.8, 0.95, 1.0), emit=(0.55, 0.85, 1.0), emit_strength=12.0),
+    wallbar=flat('wallbar', (1.0, 0.5, 0.1), emit=(1.0, 0.42, 0.06), emit_strength=14.0),
     rug=pbr('rug', 'dirty_carpet', tint=(0.5, 0.18, 0.12), normal=0.5),
 )
 SHELL, PROPS, DYN, COL = [], [], {}, []
@@ -194,13 +196,13 @@ PROPS.append(lbulb)
 PROPS.append(cyl('lchain', (LX + 0.05, DESK_Y + 0.17, LZ + 0.09), 0.002, 0.14, M['brass'], seg=4))
 
 # candlestick telephone, ashtray, lighter, whisky-free desk
-TX, TZ = 0.55, -0.66
-PROPS.append(lathe('tbase', [(0, 0), (0.06, 0), (0.06, 0.012), (0.05, 0.03), (0.016, 0.05), (0.014, 0.26), (0, 0.26)], (TX, DESK_Y, TZ), M['bakelite']))
-PROPS.append(lathe('tmouth', [(0, 0), (0.018, 0.0), (0.03, 0.05), (0.032, 0.06), (0, 0.06)], (TX, DESK_Y + 0.25, TZ), M['bakelite']))
-rec = lathe('treceiver', [(0, 0), (0.012, 0), (0.024, 0.03), (0.026, 0.06), (0.012, 0.075), (0.01, 0.12), (0, 0.12)], (TX + 0.05, DESK_Y + 0.12, TZ), M['bakelite'])
+TX, TZ, TY = -1.95, -4.2, 0.555   # candlestick phone on the side table by the door (the desk has the video-phone)
+PROPS.append(lathe('tbase', [(0, 0), (0.06, 0), (0.06, 0.012), (0.05, 0.03), (0.016, 0.05), (0.014, 0.26), (0, 0.26)], (TX, TY, TZ), M['bakelite']))
+PROPS.append(lathe('tmouth', [(0, 0), (0.018, 0.0), (0.03, 0.05), (0.032, 0.06), (0, 0.06)], (TX, TY + 0.25, TZ), M['bakelite']))
+rec = lathe('treceiver', [(0, 0), (0.012, 0), (0.024, 0.03), (0.026, 0.06), (0.012, 0.075), (0.01, 0.12), (0, 0.12)], (TX + 0.05, TY + 0.12, TZ), M['bakelite'])
 PROPS.append(rec)
-PROPS.append(box('thook', (TX + 0.012, DESK_Y + 0.2, TZ - 0.005), (TX + 0.055, DESK_Y + 0.21, TZ + 0.005), M['brass']))
-PROPS.append(tube_path('tcord', [(TX, DESK_Y + 0.01, TZ + 0.05), (TX + 0.05, DESK_Y + 0.004, TZ + 0.15), (TX + 0.18, DESK_Y + 0.004, TZ + 0.12), (TX + 0.26, DESK_Y - 0.1, TZ + 0.05)], 0.004, M['bakelite']))
+PROPS.append(box('thook', (TX + 0.012, TY + 0.2, TZ - 0.005), (TX + 0.055, TY + 0.21, TZ + 0.005), M['brass']))
+PROPS.append(tube_path('tcord', [(TX, TY + 0.01, TZ + 0.05), (TX + 0.05, TY + 0.004, TZ + 0.15), (TX + 0.18, TY + 0.004, TZ + 0.12), (TX + 0.26, TY - 0.1, TZ + 0.05)], 0.004, M['bakelite']))
 PROPS.append(lathe('ashtray', [(0, 0.0), (0.072, 0.0), (0.084, 0.024), (0.076, 0.027), (0.062, 0.009), (0, 0.009)], (0.3, DESK_Y, -0.62), M['darkbrass'], smooth=False))
 for k in range(3):
     a = k * 2.094
@@ -247,7 +249,7 @@ PROPS.append(pads)
 clip = ph('clipboard', (0.42, DESK_Y + 0.006, -0.32), ry_deg=-70, target=900)
 PROPS.append(clip)
 binder = ph('binder_notebook', (0, 0, 0), keep=['binder_notebook_closed'], target=1500)
-binder.location = G(-1.82, 0.555, -4.05); apply_xform(binder); PROPS.append(binder)
+binder.location = G(-1.78, 0.555, -3.92); apply_xform(binder); PROPS.append(binder)
 lighter = ph('vintage_lighter', (0.43, DESK_Y + 0.035, -0.5), ry_deg=30, target=800, keep=['body', 'hammer', 'hinge'])
 PROPS.append(lighter)
 fan = ph('ceiling_fan', (0.2, RH, -1.9), target=3000, drop=['blades'])
@@ -303,6 +305,7 @@ fit_uv(pane, 'z'); dleaf.append(pane)
 for (x0, x1, y0, y1) in ((DOOR['x0'] + 0.1, DOOR['x1'] - 0.1, 1.07, 1.1), (DOOR['x0'] + 0.1, DOOR['x1'] - 0.1, 2.02, 2.05),
                          (DOOR['x0'] + 0.1, DOOR['x0'] + 0.13, 1.07, 2.05), (DOOR['x1'] - 0.13, DOOR['x1'] - 0.1, 1.07, 2.05)):
     dleaf.append(box('dbead', (x0, y0, BACK - 0.025), (x1, y1, BACK - 0.008), M['walnut'], bevel=0.004))
+dleaf += deco_stepped_frame('dgold', 'z', (-1.0, 1.56, BACK - 0.016), 0.82, 1.0, t=0.03, d=0.012, steps=2)   # stepped gold border on the frosted glass
 dleaf.append(cyl('dknob', (DOOR['x1'] - 0.09, 1.0, BACK - 0.025), 0.028, 0.06, M['brass'], axis='Z'))
 dleaf.append(box('dplate', (DOOR['x1'] - 0.115, 0.92, BACK - 0.026), (DOOR['x1'] - 0.065, 1.1, BACK - 0.02), M['brass'], bevel=0.003))
 door = join(dleaf, 'door')
@@ -317,13 +320,20 @@ for c in (((-RW - 0.3, 0, BACK - 0.3), (-RW, RH, FRONT + 0.3)), ((RW, 0, BACK - 
     COL.append(dict(min=list(c[0]), max=list(c[1]), cover=False, tag='wall'))
 
 # ---------------------------------------------------------------- lights: sodium street lamp + neon signs outside, desk lamp, hall bulb
+COLD_WIN, COLD_TUBE = (0.42, 0.78, 1.0), (0.6, 0.9, 1.0)   # cold window light (city/screens) and a cold hall tube
 KEY_POS, KEY_AIM = (2.2, 3.66, -11.3), (0.0, 0.8, -0.4)
-light('SPOT', KEY_POS, SODIUM_HP, 7000, radius=0.05, gaim=KEY_AIM, spot_deg=16, blend=0.35, name='sodium_key')
+light('SPOT', KEY_POS, COLD_WIN, 6500, radius=0.05, gaim=KEY_AIM, spot_deg=16, blend=0.35, name='sodium_key')
 light('AREA', (0.7, 0.2, -6.2), NEON_RED, 28, gaim=(0.5, 2.7, -2.0), size=(1.4, 0.2), name='neon_red')
 light('AREA', (2.8, 1.6, -6.6), NEON_TEAL, 40, gaim=(-1.5, 1.2, -1.0), size=(0.6, 0.15), name='neon_teal')
-light('AREA', (0.8, 4.5, -9.0), SODIUM_HP, 40, gaim=(0.8, 0.0, -4.6), size=(6, 3), name='sodium_sky')
+light('AREA', (0.8, 4.5, -9.0), COLD_WIN, 60, gaim=(0.8, 0.0, -4.6), size=(6, 3), name='sodium_sky')
 light('POINT', (LX - 0.0, DESK_Y + 0.295, LZ + 0.03), INCAND, 9, radius=0.015, name='desk_lamp')
-light('POINT', (-1.0, 2.44, -6.3), INCAND, 28, radius=0.03, name='hall_bulb')
+light('AREA', (-1.0, 2.55, -6.3), COLD_TUBE, 160, gaim=(-1.0, 0, -6.3), size=(0.15, 1.6), name='hall_tube')
+light('POINT', (-1.0, 2.44, -6.3), INCAND, 6, radius=0.03, name='hall_bulb')
+PROPS.append(box('halltube', (-1.05, 2.56, -7.1), (-0.95, 2.6, -5.5), M['tube']))
+# warm wall bar on the right wall (a warm practical inside the cold room)
+PROPS.append(box('wallbar', (2.06, 1.55, -2.32), (2.1, 2.05, -2.24), M['wallbar']))
+PROPS.append(box('wallbarbox', (2.03, 1.5, -2.36), (2.1, 2.1, -2.2), M['darkbrass'], bevel=0.005))
+light('AREA', (1.98, 1.8, -2.28), (1.0, 0.42, 0.08), 22, gaim=(0.0, 1.0, -2.28), size=(0.08, 0.5), name='wallbar')
 light('POINT', (-1.0, 1.6, -7.6), INCAND, 2.5, radius=0.2, name='hall_fill')
 
 bpy.context.scene['colliders'] = json.dumps(COL)

@@ -33,7 +33,7 @@
       leave: [
         [VO, 'She left the money and her perfume. Only one of them would last the week.'],
       ],
-      gunTut: { title: 'THE REVOLVER', body: 'Six shots. RELOAD when the cylinder runs dry.\n\nHold your phone upright. The left thumb moves. Drag the right side to aim. FIRE sits just above the stick.\n\nHead shots do double damage. Cover lets you get your breath back.' },
+      gunTut: { title: 'THE PISTOL', body: 'A .45. Seven in the magazine, one in the chamber. When the slide locks back, RELOAD. Reload early and the round in the chamber stays.\n\nGUN draws it and puts it away again. Holstered, your hand keeps the cigarette.\n\nHold your phone upright. The left thumb moves. Drag the right side to aim. FIRE sits just above the stick.\n\nHead shots do double damage. Cover lets you get your breath back.' },
     },
     alley: {
       card: 'THAT NIGHT.\nTHE ALLEY BEHIND KESTREL STREET.',
