@@ -237,6 +237,7 @@
   }
   function title() {
     E.title.classList.add('on');
+    if (/[?&]jukebox/.test(location.search) && !NR.jukebox.isOpen) NR.jukebox.open(); // hub link opens the jukebox (John 11/2)
     return new Promise(r => { const f = () => { E.title.classList.remove('on'); r(); }; onTap(E.begin, f); E.beginFn = f; });
   }
 
