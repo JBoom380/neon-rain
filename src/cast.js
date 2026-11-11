@@ -19,14 +19,14 @@
       sh.uniforms.uRimB = { value: new T.Color(0xff2a5a).multiplyScalar(0.22) };
       // matte, never blown out: cap albedo luminance (white shirts and the ivory suit stay cloth under the work lights)
       sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n float lumA = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)); diffuseColor.rgb *= min(1.0, 0.55 / max(lumA, 1e-4));\n#ifdef USE_ROUGHNESSMAP\n float skinM = 1.0 - smoothstep(0.02, 0.045, abs(texture2D(roughnessMap, vRoughnessMapUv).r - 0.45)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15))) * vec3(1.02, 0.97, 0.95), 0.35 * skinM);\n#endif')
-        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n#ifdef USE_ROUGHNESSMAP\n float specK = texture2D(roughnessMap, vRoughnessMapUv).r; reflectedLight.directSpecular *= specK; reflectedLight.indirectSpecular *= specK;\n float skinK = 1.0 - smoothstep(0.02, 0.045, abs(specK - 0.45));\n reflectedLight.directSpecular *= 1.0 - 0.75 * skinK;\n reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, reflectedLight.directDiffuse * vec3(1.06, 0.94, 0.9), skinK);\n reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.30, 0.07, 0.05) * skinK * 0.6;\n#endif');
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n#ifdef USE_ROUGHNESSMAP\n float specK = texture2D(roughnessMap, vRoughnessMapUv).r; reflectedLight.directSpecular *= specK; reflectedLight.indirectSpecular *= specK;\n float skinK = 1.0 - smoothstep(0.02, 0.045, abs(specK - 0.45));\n reflectedLight.directSpecular *= 1.0 - 0.75 * skinK; reflectedLight.directSpecular = min(reflectedLight.directSpecular, vec3(0.10)); // a cap: the stubble area of the roughness map is not marked as skin, and the work lights made pale smears on cheek and chin\n reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, reflectedLight.directDiffuse * vec3(1.06, 0.94, 0.9), skinK);\n reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.30, 0.07, 0.05) * skinK * 0.6;\n#endif');
       sh.fragmentShader = 'uniform vec3 uRimA, uRimB;\n' + sh.fragmentShader.replace('#include <opaque_fragment>',
         'float nv = 1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0); float rimk = nv * nv * nv;\n' +
         'outgoingLight += mix(uRimB, uRimA, smoothstep(-0.35, 0.35, normal.x)) * rimk * (1.0 - 0.85 * smoothstep(0.25, 0.85, normal.y));\n' +
         'float pk = max(max(outgoingLight.r, outgoingLight.g), outgoingLight.b); float pkk = pk < 0.3 ? pk : 0.3 + (pk - 0.3) / (1.0 + (pk - 0.3) / 0.5); outgoingLight *= pkk / max(pk, 1e-4);\n#include <opaque_fragment>\n' + // soft shoulder: hot work lights never blow skin and cloth out
         ' float rq = diffuseColor.r / max(0.004, max(diffuseColor.g, diffuseColor.b)); gl_FragColor.a = 1.0 - smoothstep(4.0, 7.0, rq) * smoothstep(0.02, 0.05, diffuseColor.r) * 0.95;');
     };
-    m.customProgramCacheKey = () => 'nrCast6'; m.needsUpdate = true;
+    m.customProgramCacheKey = () => 'nrCast7'; m.needsUpdate = true;
   }
 
   // alpha hair cards: alpha-tested strands tinted per character, with a Kajiya-style anisotropic highlight running across
@@ -52,7 +52,11 @@
     while (off < buf.byteLength) { const len = dv.getUint32(off, true), type = dv.getUint32(off + 4, true); const chunk = buf.slice(off + 8, off + 8 + len); if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(chunk)); else bin = chunk; off += 8 + len; }
     const arr = (i) => { const a = json.accessors[i], bv = json.bufferViews[a.bufferView], C = TA[a.componentType], n = NC[a.type]; const start = (bv.byteOffset || 0) + (a.byteOffset || 0); return { array: new C(bin.slice(start, start + a.count * n * C.BYTES_PER_ELEMENT)), n, norm: !!a.normalized }; };
     const attr = (i) => { const r = arr(i); return new T.BufferAttribute(r.array, r.n, r.norm); };
-    const images = await Promise.all((json.images || []).map(async (im) => { const bv = json.bufferViews[im.bufferView]; return createImageBitmap(new Blob([bin.slice(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength)], { type: im.mimeType }), { imageOrientation: 'none' }); }));
+    // face pass (tools/faces): the colour texture of each enemy variant has a generated face projected onto the head; the file replaces the one in the GLB
+    const FACE_TEX = { thug_a_col: 'jpg', thug_b_col: 'jpg', thug_c_col: 'jpg', gale_a_col: 'jpg', gale_b_col: 'jpg', gale_c_col: 'jpg', thug_a_rm: 'jpg', thug_b_rm: 'jpg', thug_c_rm: 'jpg', gale_a_rm: 'jpg', gale_b_rm: 'jpg', gale_c_rm: 'jpg' };
+    const images = await Promise.all((json.images || []).map(async (im) => { const bv = json.bufferViews[im.bufferView]; const own = () => createImageBitmap(new Blob([bin.slice(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength)], { type: im.mimeType }), { imageOrientation: 'none' });
+      if (FACE_TEX[im.name]) { try { const r = await fetch(NR.ASSET + 'models/cast/tex/' + im.name + '.' + FACE_TEX[im.name]); if (r.ok) return await createImageBitmap(await r.blob(), { imageOrientation: 'none' }); } catch (e) {} }
+      return own(); }));
     const texCache = {};
     const tex = (info, srgb) => { if (!info) return null; const src = json.textures[info.index].source, k = src + (srgb ? 's' : 'l'); if (!texCache[k]) { const t = new T.Texture(images[src]); t.flipY = false; t.colorSpace = srgb ? T.SRGBColorSpace : T.NoColorSpace; t.anisotropy = 4; t.needsUpdate = true; texCache[k] = t; } return texCache[k]; };
     const mats = (json.materials || []).map(md => {

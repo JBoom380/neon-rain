@@ -9,7 +9,7 @@ from bpy_extras.object_utils import world_to_camera_view
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 OUTDIR, SETS = argv[0], argv[1].split(',')
-OPT = dict(hide='', engine='eevee', passes='color,depth,normal', frames='', angles='0,45,90,135,180,225,270,315')
+OPT = dict(shape='', hide='', engine='eevee', passes='color,depth,normal', frames='', angles='0,45,90,135,180,225,270,315')
 for a in argv[2:]:
     k, v = a.split('='); OPT[k] = v
 PASSES = OPT['passes'].split(',')
@@ -54,6 +54,17 @@ vm = nnt.nodes.new('ShaderNodeVectorMath'); vm.operation = 'MULTIPLY_ADD'
 vm.inputs[1].default_value = (0.5, 0.5, -0.5); vm.inputs[2].default_value = (0.5, 0.5, 0.5)
 nnt.links.new(geo.outputs['Normal'], vt.inputs[0]); nnt.links.new(vt.outputs[0], vm.inputs[0]); nnt.links.new(vm.outputs[0], nem.inputs['Color'])
 vl = sc.view_layers[0]
+# shape=1: FAV1 proportions (bigger head, slimmer chest and hips, golden hair); bone scales are not keyed, so they hold on every frame
+if OPT['shape']:
+    from mathutils import Vector as _V
+    for n in ('neck_01', 'clavicle_l', 'clavicle_r', 'thigh_l', 'thigh_r'): arm.data.bones[n].inherit_scale = 'NONE'
+    PS = {'head': (1.17, 1.17, 1.17), 'spine_02': (0.9, 1.0, 0.92), 'spine_03': (0.93, 1.0, 0.95), 'pelvis': (0.9, 1.0, 0.94)}
+    for n, v in PS.items(): arm.pose.bones[n].scale = _V(v)
+    for m in bpy.data.materials:
+        if 'hair' in m.name and m.use_nodes:
+            for nd in m.node_tree.nodes:
+                if nd.type == 'BSDF_PRINCIPLED' and not nd.inputs['Base Color'].is_linked: nd.inputs['Base Color'].default_value = (0.62, 0.40, 0.17, 1)
+                if nd.type == 'BSDF_HAIR_PRINCIPLED' and 'Color' in nd.inputs and not nd.inputs['Color'].is_linked: nd.inputs['Color'].default_value = (0.62, 0.40, 0.17, 1)
 # guide colours closer to her painted look: brighter red satin skirt
 for m in bpy.data.materials:
     if m.name.startswith('satin_red') and m.use_nodes:
@@ -65,7 +76,7 @@ def set_engine(p):
         sc.render.engine = 'BLENDER_WORKBENCH'; sh = sc.display.shading; sh.light = 'STUDIO'; sh.color_type = 'MATERIAL'
     else:
         sc.render.engine = 'BLENDER_EEVEE'
-        try: sc.eevee.taa_render_samples = 32 if p == 'color' else 1
+        try: sc.eevee.taa_render_samples = int(OPT.get('samples', 32)) if p == 'color' else 1
         except Exception: pass
     if p == 'color':
         vl.material_override = None; sc.view_settings.view_transform = 'AgX'; sc.view_settings.look = 'AgX - Base Contrast'; sc.view_settings.exposure = -0.1

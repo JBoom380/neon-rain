@@ -397,7 +397,7 @@ if '--bake' in ARGS:
     bake([props], [at], 'atlas', 'COMBINED')
     lm_mult, lm_img = save_ldr(lm, WORK / 'alley_lm.jpg', pct=99.5, smooth=2)
     lmh_mult, lmh_img = save_ldr(lmh, WORK / 'alley_lmhi.jpg', pct=99.5, smooth=2)
-    at_mult, at_img = save_ldr(at, WORK / 'alley_atlas.jpg', pct=99.3)
+    at_mult, at_img = save_ldr(at, WORK / 'alley_atlas.jpg', pct=97.5, quality=97)
     for o, img, mult in ((shell, lm_img, lm_mult), (shellhi, lmh_img, lmh_mult)):
         for slot in o.material_slots:
             slot.material = export_mat_lightmapped(slot.material, img, mult)

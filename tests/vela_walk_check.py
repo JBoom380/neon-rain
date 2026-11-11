@@ -33,6 +33,7 @@ def session(b, name, side):
     pg.on("pageerror", lambda e: errs.append(str(e))); pg.on("console", lambda m: m.type == "error" and errs.append(m.text))
     pg.goto(f"http://127.0.0.1:{PORT}/src/dev.html"); pg.wait_for_function("window.READY === true")
     pg.wait_for_timeout(600); pg.evaluate("NR.ui.fast = true"); pg.touchscreen.tap(195, 500); pg.wait_for_timeout(400)
+    pg.wait_for_function("!!document.querySelector('#nru .title .btn.red')", timeout=60000); pg.wait_for_timeout(500)
     pg.evaluate("document.querySelector('#nru .title .btn.red').dispatchEvent(new PointerEvent('pointerup', {bubbles:true}))")
     until(pg, f"!!({VELA})", 120)
     if side:  # watch from by the window, off her right side
@@ -52,7 +53,7 @@ def session(b, name, side):
 
 try:
     with sync_playwright() as p:
-        b = p.chromium.launch(args=["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist"])
+        b = p.chromium.launch(args=["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist", "--autoplay-policy=no-user-gesture-required"])
         session(b, "player", False)
         session(b, "side", True)
         b.close()

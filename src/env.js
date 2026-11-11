@@ -23,6 +23,19 @@
     mat.onBeforeCompile = (s, r) => { if (prev) prev(s, r); s.fragmentShader = s.fragmentShader.replace('#include <opaque_fragment>', '{ vec3 kk = max(outgoingLight - vec3(0.8), vec3(0.0)); outgoingLight = min(outgoingLight, vec3(0.8)) + kk / (1.0 + kk / 0.6); }\n#include <opaque_fragment>'); };
     mat.customProgramCacheKey = () => 'clampHi' + (prev ? 'w' : '');
   }
+  // baked prop atlases are dark 8-bit JPEGs under a large gain: the chroma noise shows as red and blue blocks.
+  // The colour comes from a 5-tap blur, the detail from a half-blurred luma, so the blocks go and the edges stay.
+  function smoothChroma(mat) {
+    const prev = mat.onBeforeCompile, sz = mat.map && mat.map.image ? mat.map.image.width : 2048;
+    mat.onBeforeCompile = (s, r) => { if (prev) prev(s, r); s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', `#ifdef USE_MAP
+      { float zv = 6.0 / (120.0 - gl_FragCoord.z * 119.95); if (zv < 0.86) { float kf = smoothstep(0.5, 0.86, zv); if (fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453) > kf) discard; } } // a prop nearer than 0.85 m to the lens fades out (dither): no blurred chair back over the controls
+      vec4 sampledDiffuseColor = texture2D( map, vMapUv ); { vec2 px = vec2(${(3 / sz).toFixed(6)});
+        vec3 cb = sampledDiffuseColor.rgb + texture2D( map, vMapUv + px * vec2(1.0, 0.3) ).rgb + texture2D( map, vMapUv + px * vec2(-1.0, -0.3) ).rgb + texture2D( map, vMapUv + px * vec2(-0.3, 1.0) ).rgb + texture2D( map, vMapUv + px * vec2(0.3, -1.0) ).rgb; cb *= 0.2;
+        float l = dot(sampledDiffuseColor.rgb, vec3(0.3, 0.59, 0.11)), lb = dot(cb, vec3(0.3, 0.59, 0.11)); sampledDiffuseColor.rgb = cb * clamp(mix(l, lb, 0.5) / max(lb, 1e-5), 0.4, 2.5); }
+      diffuseColor *= sampledDiffuseColor;
+    #endif`); };
+    const pk = mat.customProgramCacheKey; mat.customProgramCacheKey = () => (pk ? pk.call(mat) : '') + 'sc3' + sz;
+  }
   // GLB materials -> phone materials (unlit, baked)
   function phoneMats(root, opts) {
     const neon = [];
@@ -48,6 +61,7 @@
         n = m; n.userData.keep = true;
       }
       if (n && (x.lm != null || x.baked != null)) clampHi(n);
+      if (n && x.baked != null && n.map) smoothChroma(n);
       if (n) { n.name = m.name; o.material = n; m.dispose(); }
       if (n && m.map && n.map) { n.map.anisotropy = 8; }
     });
@@ -263,12 +277,31 @@
     L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0x8fd4ff, k: 0.08, maxD: 6, yTop: 2.6, zMin: BACK + 0.15 };
     L.spot = spot;
     const lampLight = new T.PointLight(0xffb36a, 2.2, 3.4, 1.8); lampLight.position.set(-0.52, DESK_Y + 0.29, -0.67); S.add(lampLight);
+    // clean desk top, blotter and lamp shade over the baked ones: the dark 8-bit prop atlas shows blocks at this distance
+    { const dt = W.tex(1024, 512, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#5a3418'); gr.addColorStop(1, '#6a3e1c'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+        let sd = 7; const rn = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+        for (let i = 0; i < 420; i++) { const y = rn() * h, a = 0.05 + rn() * 0.14; g.strokeStyle = rn() < 0.5 ? `rgba(20,9,3,${a})` : `rgba(150,96,48,${a * 0.7})`; g.lineWidth = 0.6 + rn() * 2.2; g.beginPath(); g.moveTo(0, y); const k = rn() * 6; for (let x = 0; x <= w; x += 64) g.lineTo(x, y + Math.sin(x * 0.006 + k) * 5); g.stroke(); }
+        const bx = w * 0.235, by = h * 0.20, bw = w * 0.555, bh = h * 0.68; // the blotter: dark green leather, a stitched tan border
+        g.fillStyle = '#3a2412'; g.fillRect(bx - 6, by - 6, bw + 12, bh + 12); const bg = g.createRadialGradient(bx + bw * 0.3, by + bh * 0.4, 10, bx + bw * 0.5, by + bh * 0.5, bw * 0.7); bg.addColorStop(0, '#22382a'); bg.addColorStop(1, '#14231a'); g.fillStyle = bg; g.fillRect(bx, by, bw, bh);
+        for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${rn() < 0.5 ? '0,0,0' : '90,120,96'},${0.04 + rn() * 0.06})`; g.fillRect(bx + rn() * bw, by + rn() * bh, 2, 2); }
+        g.strokeStyle = 'rgba(190,150,90,0.55)'; g.lineWidth = 1.5; g.setLineDash([7, 5]); g.strokeRect(bx + 9, by + 9, bw - 18, bh - 18); g.setLineDash([]); });
+      dt.anisotropy = 8;
+      const top = new T.Mesh(new T.PlaneGeometry(1.64, 0.83), new T.MeshStandardMaterial({ map: dt, color: 0x777777, roughness: 0.92, metalness: 0 })); top.rotation.x = -Math.PI / 2; top.position.set(0.01, 0.7872, -0.435); top.receiveShadow = true; S.add(top);
+      const sg = new T.CylinderGeometry(0.112, 0.112, 0.46, 24, 1, false, -Math.PI / 2, Math.PI); sg.rotateZ(Math.PI / 2);
+      const st = W.tex(64, 128, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#0a2a17'); gr.addColorStop(0.6, '#145a30'); gr.addColorStop(1, '#2f9a58'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+      const shade = new T.Mesh(sg, new T.MeshStandardMaterial({ map: st, side: T.DoubleSide, roughness: 0.6, metalness: 0, emissive: 0x0c3a1e, emissiveIntensity: 1 })); shade.position.set(-0.535, 1.074, -0.665); S.add(shade);
+      const trim = new T.Mesh(new T.CylinderGeometry(0.013, 0.013, 0.53, 8), new T.MeshStandardMaterial({ color: 0x7a5a22, roughness: 0.8, metalness: 0 })); trim.rotation.z = Math.PI / 2; trim.position.set(-0.535, 1.192, -0.665); S.add(trim); }
     const velaRim = new T.PointLight(0xffa050, 3.0, 3.0, 1.6); velaRim.position.set(-0.9, 1.5, -0.2); S.add(velaRim);
-    const hallLight = new T.PointLight(0x9fe0ff, 5.0, 5.0, 1.6); hallLight.position.set(-1.0, 2.3, BACK - 1.8); S.add(hallLight);
+    const hallLight = new T.PointLight(0xc8b49a, 1.9, 5.0, 1.6); hallLight.position.set(-1.0, 2.3, BACK - 1.8); S.add(hallLight);
     // backlight: the hall tube floods the corridor haze, so whoever stands in the open door is a silhouette
-    beam(S, V3(-1.0, 2.58, BACK - 1.7), V3(-1.0, 0.0, BACK - 1.2), 0.08, 1.0, 0x6ad0ff, 0.5);
-    hazeSlab(S, V3(-1.0, 1.25, BACK - 2.4), 2.0, 2.5, 0x3aa8c8, 0.55); hazeSlab(S, V3(-1.0, 1.3, BACK - 1.1), 1.6, 2.4, 0x2a90b0, 0.3);
-    W.glow(0xa8e8ff, 1.6, -1.0, 2.56, BACK - 1.7, S, 0.6);
+    beam(S, V3(-1.0, 2.58, BACK - 1.7), V3(-1.0, 0.0, BACK - 1.2), 0.08, 1.0, 0x7a6450, 0.16);
+    hazeSlab(S, V3(-1.0, 1.25, BACK - 2.4), 2.0, 2.5, 0x4a3a2e, 0.10); hazeSlab(S, V3(-1.0, 1.3, BACK - 1.1), 1.6, 2.4, 0x42362c, 0.10);
+    W.glow(0x8a9aa4, 1.0, -1.0, 2.56, BACK - 1.7, S, 0.05);
+    // the hall's end wall: a dim wall tone, lit only by the hall light, so the door reads as a dark hall with a backlit figure
+    const hallWall = new T.Mesh(new T.PlaneGeometry(3.6, 3.4), new T.MeshLambertMaterial({ color: 0x5e4a3a })); hallWall.position.set(-0.9, 1.5, -7.55); S.add(hallWall);
+    // the hall floor seen through the door: the baked floor is bright orange, so a dark translucent sheet sits over it
+    const hallFloor = new T.Mesh(new T.PlaneGeometry(3.0, 5.0), new T.MeshBasicMaterial({ color: 0x0d0906, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+    hallFloor.rotation.x = -Math.PI / 2; hallFloor.position.set(-1.0, 0.012, -5.9); S.add(hallFloor);
     // warm practicals in the cold room: desk lamp pool, the wall bar
     beam(S, V3(-0.52, DESK_Y + 0.3, -0.67), V3(-0.45, DESK_Y, -0.6), 0.06, 0.38, 0xffa040, 0.08);
     W.glow(0xff8a20, 0.9, 2.06, 1.8, -2.28, S, 0.5);
@@ -303,6 +336,16 @@
     attach(L, 'office', (root) => {
       const d = node(root, 'door'); if (d) { doorProxy.position.copy(d.position); d.position.set(0, 0, 0); doorProxy.add(d); }
       blades = node(root, 'fan_blades');
+      // the baked set ends the hall in a white plane (world z about -7.8): cut those triangles out; the dim end wall above takes its place
+      root.updateMatrixWorld(true);
+      const v = new T.Vector3(), inBack = (wp, i) => { const x = wp[i * 3], y = wp[i * 3 + 1], z = wp[i * 3 + 2]; return z > -7.95 && z < -7.65 && x > -2.7 && x < 0.3 && y > -0.2 && y < 3.2; };
+      root.traverse(m => {
+        if (!m.isMesh || !m.geometry || !m.geometry.index) return;
+        const g = m.geometry, P = g.attributes.position, idx = g.index.array, wp = new Float32Array(P.count * 3);
+        for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(m.matrixWorld); wp[i * 3] = v.x; wp[i * 3 + 1] = v.y; wp[i * 3 + 2] = v.z; }
+        const keep = []; for (let t = 0; t < idx.length; t += 3) if (!(inBack(wp, idx[t]) && inBack(wp, idx[t + 1]) && inBack(wp, idx[t + 2]))) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+        if (keep.length < idx.length) g.setIndex(new T.BufferAttribute(new idx.constructor(keep), 1));
+      });
     }, { lm: 4.6, baked: 4.6 });
     return L;
   }
@@ -354,11 +397,11 @@
     // real-time light for the characters (the set is baked): neon spill, door lamps, the sodium lamp over Miles
     S.add(new T.HemisphereLight(0x5a3a2a, 0x140c08, 0.9));
     const pl = (c, i, x, y, z, d) => { const p = new T.PointLight(c, i, d || 9, 1.6); p.position.set(x, y, z); S.add(p); return p; };
-    const signs = [pl(0xff2a14, 40, -2.4, 4.4, -7, 11), pl(0x20ffc0, 45, 2.4, 4.4, -14, 12), pl(0xff8a20, 40, -2.4, 3.6, -24, 11), pl(0xff2a6a, 34, 2.4, 5.2, -30, 11)];
+    const signs = [pl(0xff2a14, 40, -2.4, 4.4, -7, 11), pl(0x969ea2, 24, 2.4, 4.4, -14, 12), pl(0xff8a20, 40, -2.4, 3.6, -24, 11), pl(0xff2a6a, 34, 2.4, 5.2, -30, 11)];
     for (const [x, z] of [[-2.95, -9], [2.95, -17], [-2.95, -27]]) { pl(0xffa860, 10, x, 2.6, z, 6); W.glow(0xff9a40, 0.4, x, 2.62, z, S, 0.4); beam(S, V3(x, 2.58, z), V3(x * 0.72, 0, z), 0.05, 0.9, 0xff9a40, 0.3); }
     // haze: cold teal air with warm and neon pools; beams from the practicals
     for (const [x, y, z, c, a] of [[0, 3.0, -8, 0x1a6878, 0.26], [0, 3.2, -16, 0x0a7068, 0.22], [0, 3.0, -24, 0x1a5868, 0.22], [0, 3.4, -31, 0x601040, 0.18], [0, 4.0, -40, 0x2a4a58, 0.3]]) hazeSlab(S, V3(x, y, z), 6.4, 6.0, c, a);
-    beam(S, V3(2.1, 3.42, -36.6), V3(0.6, 0, -34.8), 0.12, 2.4, 0xff8a20, 0.3);
+    beam(S, V3(2.1, 3.42, -36.6), V3(0.6, 0, -34.8), 0.12, 2.4, 0xff8a20, 0.12);
     for (const z of [-2.3, -3.15, -4.0]) { W.glow(0xff5010, 0.55, 1.6, 2.08, z, S, 0.55); beam(S, V3(1.6, 2.0, z), V3(1.4, 0.0, z), 0.04, 0.5, 0xff6020, 0.12); }
     // the hologram advert over the street mouth (translucent, banded, glitching)
     const holo = hologram(7, 14); holo.position.set(1.0, 11, -47); S.add(holo);
@@ -370,11 +413,11 @@
     const copSpot = new T.SpotLight(0xd0ecff, 0, 30, 0.16, 0.5, 1.2); S.add(copSpot, copSpot.target);
     const copRB = pl(0xff2010, 0, 0, 12, -14, 18);
     const cookie = W.tex(256, 256, (g, w, h) => { g.fillStyle = '#000'; g.fillRect(0, 0, w, h); const r = g.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, w / 2); r.addColorStop(0, '#fff'); r.addColorStop(0.7, '#aaa'); r.addColorStop(1, '#000'); g.fillStyle = r; g.fillRect(0, 0, w, h); }, false);
-    const spot = new T.SpotLight(0xff9030, 260, 18, 0.62, 0.4, 1.4);
+    const spot = new T.SpotLight(0xffa860, 60, 18, 0.62, 0.4, 1.4);
     spot.position.set(2.1, 3.45, -36.6); spot.target.position.set(0.4, 0, -34.6); S.add(spot, spot.target);
     spot.map = cookie; spot.castShadow = true; spot.shadow.mapSize.set(q === 'high' ? 1024 : 512, q === 'high' ? 1024 : 512); spot.shadow.camera.near = 0.5; spot.shadow.camera.far = 18; spot.shadow.bias = -0.0008;
     const lc = new T.PerspectiveCamera(T.MathUtils.radToDeg(0.62) * 2, 1, 0.5, 30); lc.position.copy(spot.position); lc.lookAt(spot.target.position); lc.updateMatrixWorld(); lc.updateProjectionMatrix();
-    L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0xffa040, k: 0.13, maxD: 30, yTop: 3.6 }; L.spot = spot;
+    L.shaft = { cookie, lightVP: new T.Matrix4().multiplyMatrices(lc.projectionMatrix, lc.matrixWorldInverse), pos: spot.position.clone(), color: 0xffa040, k: 0.06, maxD: 30, yTop: 3.6 }; L.spot = spot;
     W.glow(0xffa040, 1.6, 2.1, 3.42, -36.6, S, 0.9); W.glow(0xffa040, 1.3, 2.1, -3.42, -36.6, S, 0.35);
     L.sideLight = { ambient: 0x5a4a44, key: 0xffa040, warm: 0x401808 };
     // glows around the blade signs (+ their reflections)
@@ -425,6 +468,21 @@
     S.add(new T.HemisphereLight(0x6a4a3a, 0x2a1810, 1.6));
     const pl = (c, i, x, y, z, d) => { const p = new T.PointLight(c, i, d || 9, 1.6); p.position.set(x, y, z); S.add(p); return p; };
     pl(0xffa050, 34, -6.6, 2.8, -9, 10); pl(0xff9a50, 34, 6.2, 2.0, -8.5, 11); pl(0xffb070, 16, 7.2, 2.1, -19.2, 6);
+    // clean tops for the two surfaces the player reads clues on (the booth table and the dressing table): they fill the screen during a SCAN
+    { let sd = 23; const rn = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+      const wood = (c0, c1, dark, lite, n) => W.tex(1024, 1024, (g, w, h) => { const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, c0); gr.addColorStop(1, c1); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+        for (let i = 0; i < n; i++) { const x = rn() * w, a = 0.04 + rn() * 0.12; g.strokeStyle = rn() < 0.55 ? `rgba(${dark},${a})` : `rgba(${lite},${a * 0.7})`; g.lineWidth = 0.6 + rn() * 2.4; g.beginPath(); g.moveTo(x, 0); const k = rn() * 6; for (let y = 0; y <= h; y += 64) g.lineTo(x + Math.sin(y * 0.005 + k) * 7, y); g.stroke(); }
+        for (let i = 0; i < 5; i++) { const x = 120 + rn() * (w - 240), y = 120 + rn() * (h - 240), r = 34 + rn() * 26; g.strokeStyle = `rgba(${dark},0.22)`; g.lineWidth = 3 + rn() * 2; g.beginPath(); g.arc(x, y, r, rn() * 3, rn() * 3 + 4.6); g.stroke(); } // glass rings
+        const vg = g.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.45)'); g.fillStyle = vg; g.fillRect(0, 0, w, h);
+        g.strokeStyle = 'rgba(200,150,70,0.5)'; g.lineWidth = 6; g.strokeRect(14, 14, w - 28, h - 28); });
+      const top = (tex, sx, sz, x, y, z, col, em) => { tex.anisotropy = 8; const m = new T.Mesh(new T.PlaneGeometry(sx, sz), new T.MeshStandardMaterial({ map: tex, color: col, roughness: 0.55, metalness: 0 })); m.material.emissive.setHex(em || 0); m.material.emissiveMap = tex; m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); S.add(m); };
+      top(wood('#8a5228', '#9a6032', '30,12,4', '220,160,100', 380), 1.05, 1.05, 6.65, 0.7665, -13.62, 0xffffff, 0x6a5038); // booth three: dark walnut, glass rings, a brass inlay
+      top(wood('#8a7458', '#9a8468', '50,34,20', '230,214,190', 300), 1.16, 2.66, 7.42, 0.8065, -19.19, 0x808080, 0x181410); } // dressing table: pale painted wood, worn
+    // clean bar stools over the baked ones (their atlas charts are a few texels wide and show as colour blocks): a drum base, a brass band, a red leather seat
+    { const baseM = new T.MeshStandardMaterial({ color: 0x15110e, roughness: 0.55, metalness: 0.3 }), brassM = new T.MeshStandardMaterial({ color: 0x8a6426, roughness: 0.7, metalness: 0, emissive: 0x1e1406 }), seatM = new T.MeshStandardMaterial({ color: 0x4e0b09, roughness: 0.75, metalness: 0 });
+      for (const z of [-4.5, -6.1, -7.7, -9.3, -10.9, -12.5]) { const g = new T.Group(); g.position.set(-4.41, 0, z);
+        const base = new T.Mesh(new T.CylinderGeometry(0.2, 0.245, 0.62, 20), baseM); base.position.y = 0.31; const band = new T.Mesh(new T.CylinderGeometry(0.228, 0.228, 0.03, 20), brassM); band.position.y = 0.625; const foot = new T.Mesh(new T.CylinderGeometry(0.252, 0.252, 0.025, 20), brassM); foot.position.y = 0.0125;
+        const seat = new T.Mesh(new T.CylinderGeometry(0.235, 0.215, 0.085, 22), seatM); seat.position.y = 0.675; g.add(base, band, foot, seat); S.add(g); } }
     for (const [x, z] of [[-2, -6], [2.5, -10], [-1, -14]]) pl(0xffb070, 18, x, 3.3, z, 9);
     const neonLight = pl(0x3070ff, 26, -1.5, 3.3, -21.5, 10);
     for (const [x, z] of [[-2, -6], [2.5, -10], [-1, -14]]) W.glow(0xffb060, 1.0, x, RH - 0.9, z, S, 0.18);

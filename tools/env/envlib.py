@@ -600,7 +600,7 @@ def export_glb(objs, path):
     select_only(objs)
     bpy.ops.export_scene.gltf(filepath=str(path), export_format='GLB', use_selection=True, export_apply=True,
                               export_texcoords=True, export_normals=True, export_materials='EXPORT', export_image_format='JPEG',
-                              export_jpeg_quality=88, export_extras=True, export_yup=True, export_animations=False,
+                              export_jpeg_quality=96, export_extras=True, export_yup=True, export_animations=False,
                               export_lights=False, export_cameras=False, export_draco_mesh_compression_enable=False,
                               export_tangents=False, export_attributes=False)
     print(f'[env] exported {path} {os.path.getsize(path) / 1e6:.2f} MB')

@@ -8,10 +8,12 @@
 #nru .tap{pointer-events:auto;cursor:pointer}
 #nru .hud{position:absolute;inset:0;display:none}
 #nru .hud.on{display:block}
-#nru .obj{position:absolute;left:0;right:0;top:calc(10px + env(safe-area-inset-top,0px));text-align:center;font-style:italic;font-size:14px;letter-spacing:.04em;color:#eadfca;text-shadow:0 1px 3px #000,0 0 8px #000;padding:0 70px}
-#nru .obj:empty{display:none}
+#nru .obj{position:absolute;left:150px;right:110px;top:calc(10px + env(safe-area-inset-top,0px));text-align:center;font-style:italic;font-size:13px;line-height:1.3;letter-spacing:.04em;color:#eadfca;text-shadow:0 1px 3px #000,0 0 8px #000}
+#nru .obj.none{display:none}
+@media (max-width:380px){#nru .obj{font-size:12px;line-height:1.3}#nru .tl{max-width:90px}#nru .tr{gap:6px}#nru .tr .ib{width:34px;height:34px}}
+#nru .obj .ot{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 #nru .obj::after{content:"";display:block;width:60px;height:1px;margin:6px auto 0;background:rgba(234,223,202,.5)}
-#nru .tl{position:absolute;left:12px;top:calc(10px + env(safe-area-inset-top,0px));font-family:"Courier New",monospace;font-weight:bold;font-size:12px;letter-spacing:.1em;line-height:1.7;text-shadow:0 1px 2px #000}
+#nru .tl{position:absolute;left:12px;top:calc(10px + env(safe-area-inset-top,0px));max-width:96px;font-family:"Courier New",monospace;font-weight:bold;font-size:12px;letter-spacing:.1em;line-height:1.7;text-shadow:0 1px 2px #000,0 0 6px rgba(0,0,0,.9);background:radial-gradient(ellipse at 30% 40%,rgba(0,0,0,.55),rgba(0,0,0,0) 72%);padding:2px 10px 6px 2px;margin:-2px 0 0 -2px}
 #nru .cyl{display:flex;gap:3px;margin-bottom:2px}
 #nru .cyl b{width:5px;height:12px;border-radius:2px 2px 1px 1px;background:#e8b040;box-shadow:0 0 4px rgba(232,176,64,.8)}
 #nru .cyl b.ch{margin-left:5px}
@@ -72,7 +74,7 @@
 #nru .set h2,#nru .cf h2{font-family:"Courier New",monospace;letter-spacing:.3em;font-size:16px;color:#e8b040;margin:0 0 10px}
 #nru .itg{position:absolute;inset:0;display:none;pointer-events:auto;background:#060505;flex-direction:column}
 #nru .itg.on{display:flex}
-#nru .itg .pic{position:relative;height:39%;flex-shrink:0;overflow:hidden;background:#000}
+#nru .itg .pic{position:relative;height:30%;flex-shrink:0;overflow:hidden;background:#000}
 #nru .itg .pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 22%;opacity:0;transition:opacity .45s}
 #nru .itg .pic img.on{opacity:1}
 #nru .itg .pic::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%,transparent 45%,rgba(0,0,0,.75));pointer-events:none}
@@ -91,23 +93,25 @@
 #nru .ans .slip::before{content:"SLIP  ";font-family:"Courier New",monospace;font-weight:bold;font-style:normal;font-size:10px;letter-spacing:.2em;color:#e8b040}
 #nru .qs{flex:1;overflow-y:auto;padding:6px 10px 14px;-webkit-overflow-scrolling:touch}
 #nru .qs .hdr{display:flex;justify-content:space-between;font-family:"Courier New",monospace;font-weight:bold;font-size:11px;letter-spacing:.16em;color:#e8b040;padding:4px 2px 6px}
-#nru .qs .qb{padding:9px 10px;margin:5px 0;border:1px solid rgba(234,223,202,.35);font-size:14px;line-height:1.3;background:rgba(234,223,202,.03)}
+#nru .qs .qb{padding:7px 10px;margin:4px 0;border:1px solid rgba(234,223,202,.35);font-size:14px;line-height:1.3;background:rgba(234,223,202,.03)}
 #nru .qs .qb.used{opacity:.35;pointer-events:none;text-decoration:line-through}
 #nru .qs .qb.clue{border-color:#e8b040}
 #nru .qs .qb.clue::before{content:"CLUE  ";font-family:"Courier New",monospace;font-weight:bold;font-size:10px;letter-spacing:.16em;color:#e8b040}
 #nru .qs .row2{display:flex;gap:8px;margin-top:8px}
 #nru .qs .row2 .btn{flex:1;min-width:0;margin:0;padding:12px 6px;font-size:13px}
 #nru .qs .off{opacity:.35;pointer-events:none}
-#nru .cf{position:absolute;inset:0;display:none;pointer-events:auto;background:#1b1712;flex-direction:column;padding:calc(16px + env(safe-area-inset-top,0px)) 16px 16px;overflow-y:auto}
+#nru .qs.dec{display:flex;flex-direction:column;justify-content:center;padding-bottom:40px}
+#nru .qs.dec .hdr{justify-content:center;gap:18px;text-align:center}
+#nru .cf{position:absolute;inset:0;display:none;pointer-events:auto;background:#1b1712;flex-direction:column;padding:calc(16px + env(safe-area-inset-top,0px)) 16px 16px;overflow:hidden}
 #nru .cf.on{display:flex}
-#nru .cf .page{background:#d9cdb2;color:#1e1a14;padding:16px 16px 18px;box-shadow:0 4px 18px rgba(0,0,0,.6);font-family:"Courier New",monospace;font-size:13px;line-height:1.45;position:relative}
+#nru .cf .page{background:#d9cdb2;color:#1e1a14;padding:16px 16px 18px;box-shadow:0 4px 18px rgba(0,0,0,.6);font-family:"Courier New",monospace;font-size:13px;line-height:1.45;position:relative;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 #nru .cf .page h4{margin:14px 0 6px;font-size:12px;letter-spacing:.25em;border-bottom:1px solid #6a5a44;padding-bottom:3px}
 #nru .cf .page .it{margin:6px 0 10px}
 #nru .cf .page .it b{display:block;letter-spacing:.06em}
 #nru .cf .page .it i{display:block;color:#7a1810;margin-top:3px}
 #nru .cf .page .miss{color:#8a7a62}
 #nru .cf .stamp{position:absolute;right:14px;top:12px;border:2px solid #9a1a10;color:#9a1a10;padding:2px 6px;font-weight:bold;letter-spacing:.2em;transform:rotate(6deg);font-size:12px}
-#nru .cf .close{margin-top:14px;position:sticky;bottom:6px;background:#1b1712;flex-shrink:0}
+#nru .cf .close{margin-top:12px;background:#1b1712;flex-shrink:0}
 #nru .ec .stats{font-family:"Courier New",monospace;font-size:13px;letter-spacing:.12em;line-height:1.9;margin:22px 0;text-align:left;display:inline-block}
 #nru .ec .stats b{color:#e8b040}
 @keyframes nrblink{50%{opacity:.25}}
@@ -167,7 +171,7 @@
     h('div', 'lb t'); h('div', 'lb b');
     // HUD
     E.hud = h('div', 'hud');
-    E.obj = h('div', 'obj', '', E.hud);
+    E.obj = h('div', 'obj none', '<span class="ot"></span>', E.hud);
     E.tl = h('div', 'tl', '<div class="cyl"></div><div class="rl"></div><div class="pk"></div><div class="lv"></div>', E.hud);
     E.cyl = E.tl.querySelector('.cyl'); E.rl = E.tl.querySelector('.rl'); E.pk = E.tl.querySelector('.pk'); E.lv = E.tl.querySelector('.lv');
     for (let i = 0; i < 8; i++) h('b', i === 7 ? 'ch' : '', null, E.cyl); // 7 in the magazine + 1 in the chamber
@@ -247,23 +251,25 @@
     return new Promise(async (res) => {
       const vo = /V\.O\./.test(who);
       E.dlg.classList.toggle('vo', vo); E.who.textContent = who; E.who.className = 'who' + (who === 'VELA' ? ' vela' : '');
-      E.dlg.classList.add('on'); E.txt.textContent = ''; E.more.style.visibility = 'hidden'; clearTimeout(UI.undT); NR.audio.duck(0.5); // duck the score under VO
-      let i = 0, done = false; const speed = UI.fast ? 4000 : 42;
+      E.dlg.classList.add('on'); E.txt.textContent = ''; E.more.style.visibility = 'hidden'; clearTimeout(UI.undT); NR.audio.duck(0.25); // duck the score under VO
+      const v = UI.fast ? null : await NR.audio.speak(text); // the take sets the pace: the text ends with the voice
+      let i = 0, done = false; const speed = UI.fast ? 4000 : v ? Math.max(16, text.length / Math.max(0.6, v.dur - 0.3)) : 42;
       await new Promise(r2 => {
         let acc = 0, last = performance.now();
         typing = () => { done = true; E.txt.textContent = text; r2(); };
-        (function step(now) { if (done) return; acc += (now - last) / 1000 * speed; last = now; const n = Math.min(text.length, Math.floor(acc)); if (n > i) { i = n; E.txt.textContent = text.slice(0, i); if (i % 3 === 0) NR.audio.fx.type(); } if (i >= text.length) { done = true; r2(); } else requestAnimationFrame(step); })(last);
+        (function step(now) { if (done) return; acc += (now - last) / 1000 * speed; last = now; const n = Math.min(text.length, Math.floor(acc)); if (n > i) { i = n; E.txt.textContent = text.slice(0, i); if (i % 3 === 0 && !v) NR.audio.fx.type(); } if (i >= text.length) { done = true; r2(); } else requestAnimationFrame(step); })(last);
         const skip = (e) => { e.preventDefault(); e.stopPropagation(); E.dlg.removeEventListener('pointerup', skip); if (!done) typing(); };
         E.dlg.addEventListener('pointerup', skip);
       });
       typing = null; E.more.style.visibility = 'visible';
-      await advance(E.dlg);
+      if (v) { const adv = advance(E.dlg); await Promise.race([adv, v.done.then(() => new Promise(r => setTimeout(r, 650)))]); adv.cancel(); NR.audio.stopVoice(); } // a voiced line goes on by itself; a tap skips it
+      else await advance(E.dlg);
       E.dlg.classList.remove('on'); UI.undT = setTimeout(() => NR.audio.duck(1), 700); res();
     });
   }
-  function advance(el) { return new Promise(r => { let done = false; const fin = () => { if (done) return; done = true; el.removeEventListener('pointerup', f); removeEventListener('keydown', k, true); setTimeout(r, 30); };
+  function advance(el) { let cancel; const pr = new Promise(r => { let done = false; const fin = () => { if (done) return; done = true; el.removeEventListener('pointerup', f); removeEventListener('keydown', k, true); setTimeout(r, 30); }; cancel = fin;
     const f = (e) => { e.preventDefault(); e.stopPropagation(); fin(); }; const k = (e) => { if (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE') { e.preventDefault(); fin(); } };
-    setTimeout(() => { el.addEventListener('pointerup', f); addEventListener('keydown', k, true); }, UI.fast ? 0 : 120); }); }
+    setTimeout(() => { if (!done) { el.addEventListener('pointerup', f); addEventListener('keydown', k, true); } }, UI.fast ? 0 : 120); }); pr.cancel = cancel; return pr; }
   async function lines(arr) { for (const [w, t] of arr) await say(w, t); }
   async function card(text, hold = 2.6) {
     E.cardT.textContent = text; E.card.classList.add('on'); await NR.core.wait(0.02); E.card.classList.add('vis');
@@ -277,21 +283,24 @@
   function letterbox(on) { root.classList.toggle('cut', !!on); }
   let toastT = 0;
   function toast(head, text, secs = 3.2) { E.toast.innerHTML = '<small>' + head + '</small>' + text; E.toast.classList.add('on'); toastT = secs; }
-  function objective(t) { E.obj.textContent = t || ''; }
+  // the objective lives in the band between the left HUD block and the CASE / pause buttons, at most 2 lines
+  function placeObj() { const l = E.tl.offsetWidth, r = E.tr.offsetWidth; E.obj.style.left = (12 + l + 6) + 'px'; E.obj.style.right = (10 + r + 6) + 'px'; }
+  function objective(t) { E.obj.querySelector('.ot').textContent = t || ''; E.obj.classList.toggle('none', !t); if (core && core.state === 'PLAY') placeObj(); }
   function prompt(t) { E.prompt.textContent = t || ''; }
 
   // ---------------------------------------------------------------- HUD per frame
-  let hitT = 0, vRounds = -1, vPack = -1, vLives = -1, vRel = null;
+  let hitT = 0, vRounds = -1, vPack = -1, vLives = -1, vRel = null, objPlaced = false;
   NR.bus.on('hitEnemy', () => { hitT = 0.14; });
   function update(dt) {
     const P = NR.player, play = core.state === 'PLAY';
     E.hud.classList.toggle('on', play);
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) E.toast.classList.remove('on'); }
-    if (!play) return;
+    if (!play) { objPlaced = false; return; }
+    if (!objPlaced) { placeObj(); objPlaced = true; }
     E.cyl.style.display = P.armed && P.drawn ? 'flex' : 'none'; E.rl.style.display = P.armed && P.drawn ? 'block' : 'none';
     const rk = P.rounds + '/' + P.mags; if (rk !== vRounds) { vRounds = rk; E.cyl.querySelectorAll('b').forEach((b, i) => b.classList.toggle('x', i === 7 ? P.rounds < 8 : i >= Math.min(7, P.rounds))); }
     const rel = P.reloadT > 0 ? 'RELOADING  MAGS ' + P.mags : (P.armed && P.slideLock ? 'SLIDE LOCKED: RELOAD' : (P.armed ? 'MAGS ' + P.mags : ''));
-    if (rel !== vRel) { vRel = rel; E.rl.textContent = rel; }
+    if (rel !== vRel) { vRel = rel; E.rl.textContent = rel; placeObj(); }
     if (P.pack !== vPack) { vPack = P.pack; E.pk.textContent = 'SMOKES ' + P.pack; }
     if (P.lives !== vLives) { vLives = P.lives; E.lv.textContent = 'LIVES ' + '◆'.repeat(Math.max(0, P.lives)) + '◇'.repeat(Math.max(0, C.LIVES - P.lives)); }
     const a = P.armed && P.drawn && P.assistTarget(0.035); E.xh.classList.toggle('on', !!a); E.xh.style.display = P.armed && P.drawn ? 'block' : 'none';
@@ -304,7 +313,7 @@
   function caseFile(on, data) {
     if (!on) { E.cf.classList.remove('on'); return; }
     const S = NR.story, pg = E.cf.querySelector('.page');
-    let html = '<div class="stamp">OPEN</div><b>CASE 01: THE GLASS SAINT</b><br>Client: Vela Castellane. Says her sister Dolores is missing.<h4>CLUES</h4>';
+    let html = '<div class="stamp">OPEN</div><div style="padding-right:84px;min-height:44px"><b>CASE 01: THE GLASS SAINT</b><br>Client: Vela Castellane. Says her sister Dolores is missing.</div><h4>CLUES</h4>';
     for (const id of Object.keys(S.clues)) { const c = S.clues[id], f = data.clues[id];
       html += f ? '<div class="it"><b>' + c.name.toUpperCase() + '</b>' + c.note + (f.think ? '<i>THINK: ' + c.think + '</i>' : '') + '</div>' : '<div class="it miss">[ not found ]</div>'; }
     html += '<h4>SUSPECTS</h4>';
@@ -359,17 +368,18 @@
       const smokeLabel = () => { smk.textContent = 'SMOKES ' + NR.player.pack; };
       smokeLabel();
       async function answer(qText, r, slip, note) {
-        busy = true; render();
+        busy = true; render(); NR.audio.duck(0.25);
+        const voice = async (t) => { if (UI.fast || !live) return; const v = await NR.audio.speak(t); if (v) await v.done; };
         ans.innerHTML = '<div class="q">' + qText + '</div><div class="a">&hellip;</div>';
         const a = ans.querySelector('.a');
-        hv.textContent = '...'; await NR.core.wait(UI.fast ? 0.05 : Math.min(2.6, r.hes)); meterTo(r); setMood(r.mood);
-        a.textContent = '"' + r.a + '"';
-        if (slip) { const s = h('span', 'slip', '"' + slip + '"', a); void s; }
-        if (note) { const n = h('span', 'slip', note, a); n.style.color = '#d8ceb8'; }
-        busy = false; render();
+        hv.textContent = '...'; await voice(qText); await NR.core.wait(UI.fast ? 0.05 : Math.min(2.6, r.hes)); meterTo(r); setMood(r.mood);
+        a.textContent = '"' + r.a + '"'; await voice(r.a);
+        if (slip) { const s = h('span', 'slip', '"' + slip + '"', a); void s; await voice(slip); }
+        if (note) { const n = h('span', 'slip', note, a); n.style.color = '#d8ceb8'; await voice(note); }
+        NR.audio.duck(1); busy = false; render();
       }
       function render() {
-        qs.innerHTML = '';
+        qs.innerHTML = ''; qs.classList.toggle('dec', asked >= 4 && !busy);
         const head = h('div', 'hdr', '<span>QUESTIONS LEFT ' + (4 - asked) + '</span><span>' + (asked >= 4 ? 'DECIDE' : 'ASK 4 OF 8') + '</span>', qs); void head;
         if (asked < 4) {
           for (const q of data.questions) {
@@ -387,8 +397,9 @@
         onTap(off, () => { if (offered || busy || NR.player.pack <= 0) return; offered = true; NR.player.pack--; NR.player.smoked++; smokeLabel(); NR.audio.fx.lighter();
           NR.bus.emit('offer', { who }); answer('You offer her a cigarette and light it.', data.offer, null, data.offer.vo); });
         if (asked >= 4 && !busy) {
+          h('div', 'hdr', '<span style="letter-spacing:.06em;font-family:Georgia,serif;font-weight:normal;font-style:italic;font-size:13px;color:#d8ceb8">What is she? Your verdict goes in the case file, in ink.</span>', qs);
           const v = h('div', 'row2', '', qs);
-          for (const verdict of ['HUMAN', 'ARTIFICIAL']) { const b = h('div', 'btn red', verdict, v); b.dataset.verdict = verdict; onTap(b, () => { live = false; el.classList.remove('on'); resolve({ verdict, offered }); }); }
+          for (const verdict of ['HUMAN', 'ARTIFICIAL']) { const b = h('div', 'btn red', verdict, v); b.dataset.verdict = verdict; onTap(b, () => { live = false; NR.audio.stopVoice(); NR.audio.duck(1); el.classList.remove('on'); resolve({ verdict, offered }); }); }
         }
       }
       for (const q of data.questions) q.used = false;

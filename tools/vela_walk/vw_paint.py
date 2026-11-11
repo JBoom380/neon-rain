@@ -6,7 +6,7 @@ import os, sys, json, time, uuid, argparse, io, urllib.request, urllib.parse
 from PIL import Image
 URL = "http://127.0.0.1:8188"; CID = str(uuid.uuid4())
 BG = (74, 74, 80)
-WHO = ("a glamorous curvy young woman in her twenties with soft platinum blonde 1940s pin curls, fair porcelain skin, red lipstick, smoky eyes, "
+WHO = ("a beautiful slender young woman in her twenties with glossy golden blonde 1940s pin curls, warm peach skin with a healthy glow, red lipstick, smoky eyes, "
        "wearing a black satin halter top with a deep V neckline, a tight red satin knee-length pencil skirt, long black satin opera gloves "
        "and black patent high-heeled pumps, one gloved hand raised holding a long black cigarette holder")
 STYLE = ("1940s pulp noir paperback cover oil painting, painterly brushstrokes, soft studio key light with a warm rim light, full body head to toe, "
@@ -97,6 +97,7 @@ def wf_batch(jobs, pos, seed, denoise, steps, cfg, s_depth, s_pose, end_depth, e
     return wf, save
 
 def _submit(wf):
+    # other agents submit with front=True, which starves plain FIFO items; ours go to the front too (still one at a time)
     r = json.loads(_req("/prompt", json.dumps({"prompt": wf, "client_id": CID}).encode(), {"Content-Type": "application/json"}))
     if "error" in r: raise RuntimeError(json.dumps(r)[:2000])
     print('[queued]', r["prompt_id"], flush=True); return r["prompt_id"]

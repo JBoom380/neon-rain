@@ -16,7 +16,7 @@
   const vmCam = new T.PerspectiveCamera(); // view-model camera: identity pose, same projection as the main camera
 
   // ---- render targets ----
-  let rt = null, srt = null, W = 0, H = 0, PR = 1;
+  let rt = null, srt = null, W = 0, H = 0, PR = 0; // PR: live render scale, min(devicePixelRatio, 2); only the frame guard lowers it
   const post = new T.ShaderMaterial({
     depthTest: false, depthWrite: false,
     uniforms: {
@@ -47,21 +47,23 @@
         float l = dot(col, vec3(0.299,0.587,0.114));
         float mx=max(col.r,max(col.g,col.b)), mn=min(col.r,min(col.g,col.b)); float sat=(mx-mn)/(mx+1e-4);
         float red = smoothstep(0.28,0.5,sat)*smoothstep(0.02,0.1,col.r-max(col.g,col.b))*smoothstep(0.42,0.3,col.g/(col.r+1e-3));
-        red = max(red, clamp(1.0 - texture2D(tCol, vUv).a, 0.0, 1.0)); // sprites flag their painted reds through alpha
+        // painted / filmed figures write alpha < 0.975 on every pixel of the figure; their reds go lower (0.95 -> 0.05)
+        float fa = texture2D(tCol, vUv).a, fig = step(fa, 0.975), sred = clamp((0.95 - fa) / 0.9, 0.0, 1.0) * fig;
+        red = max(red, sred); // sprites flag their painted reds through alpha
         if (bw > 0.5) { vec3 g = vec3(pow(l,1.08)); col = mix(g, col*vec3(1.1,0.9,0.9), clamp(red*1.4,0.,1.)); }
         else { // NOIR COLOR: warm amber practicals against cold teal shadows and haze; red only for lips, blood and red neon
           float hr = col.r - col.b, hg = col.g - col.r;
           float strictRed = smoothstep(0.55, 0.75, sat) * smoothstep(0.12, 0.25, col.r - max(col.g, col.b)) * smoothstep(0.4, 0.28, col.g / (col.r + 1e-3)) * smoothstep(0.08, 0.2, mx);
-          red = max(strictRed, clamp(1.0 - texture2D(tCol, vUv).a, 0.0, 1.0));
+          red = max(strictRed, sred);
           float warm = smoothstep(0.04, 0.16, hr) * smoothstep(0.1, 0.3, sat) * smoothstep(0.16, 0.42, mx);    // lit warm areas: lamps, sconces, sodium
           float teal = smoothstep(0.03, 0.12, hg + (col.b - col.r) * 0.5) * smoothstep(0.2, 0.4, sat) * smoothstep(0.15, 0.4, mx); // neon teal / cyan / green
           // split tone: teal shadows and haze, warm-neutral highlights
           vec3 split = l * mix(vec3(0.62, 0.95, 1.02), vec3(1.05, 0.98, 0.9), smoothstep(0.08, 0.55, l));
           split += vec3(0.0, 0.016, 0.022) * (1.0 - smoothstep(0.0, 0.28, l));                                  // lifted teal haze in the blacks
           vec3 amber = mx * vec3(1.0, 0.64, 0.3);                                                               // warm hues pulled to sodium amber
-          vec3 kept = mix(mix(amber, col, 0.35), col, red);                                                     // red stays red; other warm hues go amber
+          vec3 kept = mix(mix(amber, col, 0.35), col, max(red, fig * 0.8));                                    // red stays red; other warm hues go amber; figures keep their own colour
           kept = mix(kept, mix(vec3(l), col, 1.2), teal);
-          float keep = clamp(max(max(warm * 0.85, teal), red), 0.0, 1.0);
+          float keep = clamp(max(max(warm * 0.85, teal), max(red, fig * 0.9)), 0.0, 1.0);                  // figures skip the teal split tone
           col = max(mix(split, kept, keep), 0.0); }
         col = smoothstep(vec3(0.035), vec3(1.0), col); // deep blacks
         // scan: amber wash + scanlines
@@ -104,7 +106,7 @@
 
   function setRes() {
     fit();
-    const v = core.view; PR = Math.min(devicePixelRatio || 1, settings.quality === 'high' ? 2 : 1.5);
+    const v = core.view; if (!PR) PR = Math.min(devicePixelRatio || 1, 2);
     W = Math.round(v.w * PR); H = Math.round(v.h * PR);
     renderer.setPixelRatio(1); renderer.setSize(W, H, false);
     canvas.style.width = v.w + 'px'; canvas.style.height = v.h + 'px';
@@ -115,6 +117,19 @@
     post.uniforms.tCol.value = rt.texture; post.uniforms.tShaft.value = srt.texture; post.uniforms.res.value.set(W, H);
     shaftMat.uniforms.tDep.value = rt.depthTexture;
     camera.aspect = v.w / v.h; camera.updateProjectionMatrix();
+  }
+  // frame-time guard: the median of a 120-frame window above 22 ms steps the scale down 0.25 (floor 1.0). One step back up
+  // (0.25, never above the starting scale) after 600 consecutive frames with a window median under 17.5 ms, and never within
+  // 20 s of a step down. Frames over 100 ms and the first 2 s after a scene load are not counted.
+  const G = { buf: [], holdUntil: 0, under: 0, lastDown: -1e9, start: Math.min(devicePixelRatio || 1, 2) };
+  function guardFrame(ms, now) {
+    if (!(ms > 0) || now < G.holdUntil) return;
+    G.buf.push(Math.min(ms, 100)); // a stall counts as 100 ms: the median ignores it, sustained slow frames still count if (G.buf.length > 120) G.buf.shift();
+    if (G.buf.length < 120) return;
+    const s = G.buf.slice().sort((a, b) => a - b), med = s[60];
+    if (med > 22 && PR > 1) { PR = Math.max(1, +(PR - 0.25).toFixed(2)); G.lastDown = now; G.buf.length = 0; G.under = 0; setRes(); return; }
+    G.under = med < 17.5 ? G.under + 1 : 0;
+    if (G.under >= 600 && PR < G.start && now - G.lastDown >= 20000) { PR = Math.min(G.start, +(PR + 0.25).toFixed(2)); G.buf.length = 0; G.under = 0; setRes(); }
   }
   function fit() { // portrait column: full width on phones, letterboxed on wide screens
     const vw = innerWidth, vh = innerHeight; const asp = NR.clamp(vw / vh, 9 / 21, 3 / 4);
@@ -136,6 +151,7 @@
     setState(s) { const prev = core.state; if (prev === s) return; core.state = s; NR.bus.emit('state', { state: s, prev }); },
     setScene(scene, shaft) {
       core.scene = scene; core.shaft = shaft || null; scene.add(camera); renderer.shadowMap.needsUpdate = true;
+      G.holdUntil = performance.now() + 2000; G.buf.length = 0; G.under = 0; // a new scene: ignore its first 2 s
       try { renderer.compile(scene, camera); if (core.vm) renderer.compile(core.vm.scene, camera); } catch (e) {} // compile all programs now (boot / behind the black cards), not on first draw
       if (shaft) { const u = shaftMat.uniforms; u.cookie.value = shaft.cookie; u.lightVP.value = shaft.lightVP; u.lightPos.value = shaft.pos; u.maxD.value = shaft.maxD || 9; u.yTop.value = shaft.yTop || 2.9; u.zMin.value = shaft.zMin == null ? -1e3 : shaft.zMin;
         post.uniforms.shaftCol.value.set(shaft.color || 0xd8ebff); post.uniforms.shaftK.value = shaft.k || 0.16; }
@@ -146,6 +162,7 @@
     fadeTo(v, s) { return new Promise(r => { fadeFrom = core.fx.fade; fadeTo = v; fadeDur = Math.max(0.01, s); fadeT = 0; fadeDone = r; }); },
     wait(s) { return new Promise(r => waits.push({ t: s, r })); }, // real-time seconds, ticks with the loop
     get fps() { return fpsVal; },
+    get renderScale() { return PR; },
   };
   let shakeA = 0, shakeT = 0, flashT = 0, flashMax = 1, flashA = 0; const flashC = new T.Color();
   let fadeFrom = 0, fadeTo = 0, fadeDur = 1, fadeT = 1, fadeDone = null; const waits = [];
@@ -155,6 +172,7 @@
   let last = performance.now(), fpsN = 0, fpsT = last, fpsVal = 0;
   function loop(now) {
     requestAnimationFrame(loop);
+    if (core.scene) guardFrame(now - last, now); // only rendered frames count; loading stalls are not the device
     const rdt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
     core.rdt = rdt; core.dt = rdt * core.timeScale; core.time += core.dt; core.frame++;
     fpsN++; if (now - fpsT > 1000) { fpsVal = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; }

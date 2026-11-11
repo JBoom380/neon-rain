@@ -26,7 +26,10 @@
     vela_full: { file: 'vela_full', top: 0.072, foot: 0.973, cx: 0.5, full: true }, // full-length idle for the open lens (1280 px)
     vela_full_sm: { file: 'vela_full_640', top: 0.072, foot: 0.973, cx: 0.5, full: true }, // same clip, 640 px: used when she covers < ~850 render px (no shimmer from 2x minification)
     dolores_idle: { file: 'dolores_idle', top: 0.03, chin: 0.215, cx: 0.48 },
+    vela_walk: { file: 'vela_walk', top: 0.07, foot: 0.965, cx: 0.5, full: true, walk: true }, // filmed walk toward camera (tools/vela_walk/vw_video.py)
   };
+  // filmed walk: one gait cycle (WALK.steps steps in WALK.frames at WALK.fps); played at the rate that matches her ground speed so the feet hold
+  const WALK = { frames: 0, fps: 24, steps: 2, stepLen: 0.52, cos: 0.38 }; // shown within ~67 deg of her front (the 315/0/45 sprite sectors)
   const PANEL = { dolores: { warm: 'dolores_warm', guarded: 'dolores_guarded', cold: 'dolores_cold' } };
   const HEAD = 0.27; // metres from the top of the hair to the chin
   const FRAMED_FOV = 27, OPEN_FOV = 74; // 32 deg: at ~2 m the waist-up frame fills a portrait phone and its lower edge stays off screen
@@ -68,7 +71,7 @@
       uniforms: u, vertexShader: VERT, transparent: true, depthWrite: false, side: T.DoubleSide,
       blending: T.CustomBlending, blendEquation: T.AddEquation, blendSrc: T.SrcAlphaFactor, blendDst: T.OneMinusSrcAlphaFactor, blendSrcAlpha: T.ZeroFactor, blendDstAlpha: T.OneFactor,
       fragmentShader: head + `
-        void main(){ vec4 t = both(vUv); float a = t.a * fade; if (a < 0.004) discard;
+        void main(){ vec4 t = both(vUv); float a = smoothstep(0.42, 0.82, t.a) * fade; if (a < 0.004) discard; // a hard matte: the soft edge of the clip carried its warm backlight as a halo behind her head
           vec3 c = pow(t.rgb, vec3(2.2)) * 0.62; // filmed footage keeps its own contrast; the scene light only tints and stripes it
           vec4 lp = lightVP * vec4(vW, 1.); vec2 luv = lp.xy / lp.w * 0.5 + 0.5; float ck = 0.;
           if (keyGain > 0. && lp.w > 0. && luv.x > 0. && luv.x < 1. && luv.y > 0. && luv.y < 1.) {
@@ -85,12 +88,12 @@
     });
     // second pass: depth + the red-keep alpha for the B&W RED grade, colour untouched
     const keep = new T.ShaderMaterial({
-      uniforms: u, vertexShader: VERT, transparent: false, depthWrite: true, side: T.DoubleSide,
+      uniforms: u, vertexShader: VERT, transparent: true, depthWrite: true, side: T.DoubleSide, // transparent pass: ordered after the haze (see renderOrder)
       blending: T.CustomBlending, blendEquation: T.AddEquation, blendSrc: T.ZeroFactor, blendDst: T.OneFactor, blendSrcAlpha: T.OneFactor, blendDstAlpha: T.ZeroFactor,
       fragmentShader: head + `
         void main(){ vec4 t = both(vUv); if (t.a * fade < 0.5) discard; vec3 lin = pow(t.rgb, vec3(2.2));
           float rk = smoothstep(2.0, 2.8, lin.r / max(0.03, max(lin.g, lin.b))) * smoothstep(0.16, 0.3, lin.r);
-          gl_FragColor = vec4(0., 0., 0., 1.0 - rk * 0.95); }`,
+          gl_FragColor = vec4(0., 0., 0., 0.95 - rk * 0.9); }`, // figure flag for the grade (< 0.975), lower for her reds
     });
     return { col, keep };
   }
@@ -119,9 +122,10 @@
         cookie: pu.cookie, lightVP: pu.lightVP, ambient: pu.ambient, key: pu.key, warm: pu.warm, keyGain: pu.keyGain, fogC: pu.fogC, fogD: pu.fogD, hit: pu.hit,
         rimC: { value: new T.Color(0xffe2b0) }, rimK: { value: 0.0 }, rimDir: { value: new T.Vector2(0.006, 0.002) } };
       const m = mats(this.u), g = new T.PlaneGeometry(1, 1);
-      this.mA = new T.Mesh(g, m.col); this.mB = new T.Mesh(g, m.keep); this.mA.renderOrder = 2; this.mB.renderOrder = 1;
+      this.mA = new T.Mesh(g, m.col); this.mB = new T.Mesh(g, m.keep); this.mA.renderOrder = 8; this.mB.renderOrder = 7; // after the additive haze slabs and light cones (4, 6): the haze never washes over her
       this.mA.visible = this.mB.visible = false; actor.group.add(this.mA, this.mB);
       this.cur = null; this.prev = null; this.mixT = 1; this.want = null; this.shown = false;
+      if (this.who === 'vela' && AVAIL.has('vela_walk') && MODE !== 'off') video(CLIPS.vela_walk.file, MODE === 'stack', true); // preload: she walks in on it
     }
     clipFor() { // which clip the story wants now
       const G = NR.game, b = G.beat, st = NR.core.state;
@@ -151,18 +155,23 @@
       const px = 1.8 / (2 * dist * Math.tan(cam.fov * Math.PI / 360)) * rh;
       this.small = VP.forceTier ? VP.forceTier === 'small' : this.small ? px < 1000 : px < 850;
       const fullName = this.small && AVAIL.has('vela_full_640') ? 'vela_full_sm' : 'vela_full';
-      const name = framedNow ? this.clipFor() : (this.who === 'vela' && AVAIL.has('vela_full') && !(NR.game.beat === 'office_talk' && !this.stoleDone && AVAIL.has('vela_stole')) ? fullName : null);
+      const fxw = Math.sin(a.yaw), fzw = Math.cos(a.yaw), dw = Math.hypot(cam.position.x - a.pos.x, cam.position.z - a.pos.z) || 1;
+      const walkFront = this.who === 'vela' && a.D && a.mode === 'walk' && AVAIL.has('vela_walk') && (fxw * (cam.position.x - a.pos.x) + fzw * (cam.position.z - a.pos.z)) / dw > WALK.cos;
+      this.walkFront = walkFront;
+      const name = walkFront ? 'vela_walk' : framedNow ? this.clipFor() : (this.who === 'vela' && AVAIL.has('vela_full') && !(NR.game.beat === 'office_talk' && !this.stoleDone && AVAIL.has('vela_stole')) ? fullName : null);
       if (name) this.use(name);
       // swap in the wanted clip once it has a frame; cross-dissolve 0.35 s
       if (this.next && live(this.next)) { if (this.cur && this.cur !== this.next) { this.prev = this.cur; this.mixT = 0; } this.cur = this.next; this.next = null; }
       if (this.prev && this.mixT >= 1) { this.prev.v.pause(); this.prev = null; }
-      this.mixT = Math.min(1, this.mixT + dt / 0.35);
+      this.mixT = Math.min(1, this.mixT + dt / 0.05); // a cut, not a dissolve: two clips with different framing made a ghost of the old pose
       const cx = cam.position.x - a.pos.x, cz = cam.position.z - a.pos.z, cl = Math.hypot(cx, cz) || 1;
       const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw), facing = (fx * cx + fz * cz) / cl; // 1 = she faces the camera
       const framed = framedNow; this.facingOK = facing > FACE_COS;
       const standing = !a.walking && (a.walkAmt || 0) < 0.05 && (!a.mode || a.mode === 'idle');
       // her face can be seen (within 60 deg of her front): the filmed performance; full-length clip at the open lens
-      const on = !!this.cur && a.visible && standing && facing > FACE_COS && (framed ? !this.cur.spec.full : this.cur.spec.full);
+      const walkOn = walkFront && !!this.cur && this.cur.spec.walk && a.visible;
+      const on = walkOn || (!!this.cur && a.visible && standing && facing > FACE_COS && !this.cur.spec.walk && (framed ? !this.cur.spec.full : this.cur.spec.full));
+      if (this.cur && this.cur.spec.walk && WALK.frames) this.cur.v.playbackRate = Math.max(0.25, Math.min(3, (a.speed || 1) / (WALK.steps * WALK.stepLen / (WALK.frames / WALK.fps))));
       this.shown = on; this.mA.visible = this.mB.visible = on; a.mesh.visible = !on;
       if (a.D) paintedStand(a, cam, standing && !on); // the frame-animated walker: painted angle sprites at rest, never the mocap render
       if (!on) { for (const c of [this.cur, this.next]) if (c && c.spec && c.spec.once && !c.v.paused) c.v.pause(); return; }
@@ -182,7 +191,8 @@
   }
 
   // ---------------------------------------------------------------- hooks (no edits to the other modules)
-  const VP = NR.vperf = { MODE, CLIPS, AVAIL, forceTier: null, vids, Perf, speaking: () => false, stats() { return Object.values(vids).map(c => ({ src: c.v.currentSrc.split('/').pop(), rs: c.v.readyState, t: +c.v.currentTime.toFixed(2), paused: c.v.paused, w: c.v.videoWidth, h: c.v.videoHeight, failed: !!c.v.failed })); } };
+  if (NR.ANIM && NR.ANIM.velaWalkVideo) { Object.assign(WALK, NR.ANIM.velaWalkVideo); Object.assign(CLIPS.vela_walk, { top: WALK.top, foot: WALK.foot }); AVAIL.add('vela_walk'); }
+  const VP = NR.vperf = { MODE, CLIPS, AVAIL, WALK, forceTier: null, vids, Perf, speaking: () => false, stats() { return Object.values(vids).map(c => ({ src: c.v.currentSrc.split('/').pop(), rs: c.v.readyState, t: +c.v.currentTime.toFixed(2), paused: c.v.paused, w: c.v.videoWidth, h: c.v.videoHeight, failed: !!c.v.failed })); } };
   let whoEl = null;
   VP.speaking = (name) => { if (!whoEl || !whoEl.isConnected) whoEl = document.querySelector('#nru .who'); return !!(whoEl && whoEl.textContent === name && whoEl.closest('.on')); };
   if (MODE !== 'off' && NR.actors) for (const K of [NR.actors.Painted, NR.actors.Walker]) { // the painted figure and the frame-animated walker

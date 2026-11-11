@@ -88,11 +88,21 @@
     for (let i = 0; i < 6; i++) { const a = Math.random() * 6.28; g.lineWidth = 3 + Math.random() * 4; g.strokeStyle = '#fff'; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + Math.cos(a) * 50, 64 + Math.sin(a) * 50); g.stroke(); }
   });
   const poolTex = canvasTex(128, 128, (g) => { g.fillStyle = '#fff'; g.filter = 'blur(3px)'; g.beginPath(); for (let i = 0; i < 7; i++) { const a = Math.random() * 6.28, d = Math.random() * 18; g.moveTo(64 + Math.cos(a) * d + 30, 64 + Math.sin(a) * d); g.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 26 + Math.random() * 12, 0, 7); } g.fill(); });
+  // the pale fluid of an artificial man: an irregular spill with trickles, a thin film at the rim and wet highlights (colour and alpha in one texture)
+  const milkTex = canvasTex(512, 512, (g, w, h) => { let sd = 11; const rn = () => (sd = (sd * 16807) % 2147483647) / 2147483647; g.clearRect(0, 0, w, h);
+    const shape = () => { g.beginPath(); for (let i = 0; i < 16; i++) { const a = rn() * 6.28, d = 20 + rn() * 105, r = 34 + rn() * 52; g.moveTo(256 + Math.cos(a) * d + r, 256 + Math.sin(a) * d * 0.8); g.arc(256 + Math.cos(a) * d, 256 + Math.sin(a) * d * 0.8, r, 0, 7); }
+      for (let i = 0; i < 5; i++) { const a = rn() * 6.28, len = 90 + rn() * 60; let x = 256 + Math.cos(a) * 90, y = 256 + Math.sin(a) * 80, wd = 17 + rn() * 9; for (let k = 0; k < 60; k++) { const aa = a + Math.sin(k * 0.16 + i) * 0.35; x += Math.cos(aa) * len / 60; y += Math.sin(aa) * len / 60; wd *= 0.978; g.moveTo(x + wd, y); g.arc(x, y, wd, 0, 7); } g.moveTo(x + 13, y); g.arc(x, y, 9 + rn() * 5, 0, 7); }
+    };
+    g.filter = 'blur(2px)'; g.fillStyle = 'rgba(150,156,168,0.6)'; shape(); g.fill(); // thin film at the rim
+    sd = 11; g.filter = 'blur(1px)'; g.save(); g.translate(256, 256); g.scale(0.95, 0.95); g.translate(-256, -256); g.fillStyle = '#e4e8f0'; shape(); g.fill(); g.restore();
+    g.globalCompositeOperation = 'source-atop'; g.filter = 'blur(14px)'; const sh = g.createRadialGradient(300, 300, 20, 256, 256, 230); sh.addColorStop(0, 'rgba(96,104,122,0.0)'); sh.addColorStop(1, 'rgba(96,104,122,0.5)'); g.fillStyle = sh; g.fillRect(0, 0, w, h);
+    g.filter = 'blur(1.5px)'; g.strokeStyle = 'rgba(255,255,255,1)'; g.lineCap = 'round'; for (const [x, y, r, a0, a1, lw] of [[230, 225, 70, 3.5, 4.6, 12], [270, 250, 105, 3.3, 4.2, 7], [290, 300, 60, 5.2, 6.0, 9], [200, 300, 40, 2.6, 3.4, 6]]) { g.lineWidth = lw; g.beginPath(); g.arc(x, y, r, a0, a1); g.stroke(); }
+    g.filter = 'blur(0.6px)'; g.fillStyle = 'rgba(255,255,255,1)'; for (const [x, y, r] of [[205, 190, 5], [300, 215, 4], [330, 300, 3], [245, 330, 4]]) { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); } g.globalCompositeOperation = 'source-over'; g.filter = 'none'; });
   let L = null, decals = {}, pools = {}, spray = null, tracers = [], flashLight = null, wounds = [];
   const MAXD = 72, MAXP = 24, MAXS = 220;
   function decalMesh(tex, color, n, lit) {
     // wet blood: dark, glossy, soft-edged (lit by the scene, never flat)
-    const m = new T.InstancedMesh(new T.PlaneGeometry(1, 1), new T.MeshStandardMaterial({ color, map: tex, transparent: true, depthWrite: false, alphaTest: 0.04, roughness: lit ? 0.6 : 0.18, metalness: 0, polygonOffset: true, polygonOffsetFactor: -4, emissive: lit ? color : 0, emissiveIntensity: lit ? 0.12 : 0 }), n);
+    const m = new T.InstancedMesh(new T.PlaneGeometry(1, 1), new T.MeshStandardMaterial({ color, map: tex, transparent: true, depthWrite: false, alphaTest: 0.04, roughness: lit ? 0.6 : 0.18, metalness: 0, polygonOffset: true, polygonOffsetFactor: -4, emissive: lit ? color : 0, emissiveIntensity: lit ? 0.04 : 0 }), n);
     m.count = 0; m.frustumCulled = false; m.renderOrder = 2; m.userData.next = 0; m.userData.grow = []; return m;
   }
   function attach(level) {
@@ -100,7 +110,7 @@
     if (!level.fxReady) {
       level.fx = {
         decals: { human: decalMesh(splatTex, BLOOD.human, MAXD), artificial: decalMesh(splatTex, BLOOD.artificial, MAXD, true) },
-        pools: { human: decalMesh(poolTex, 0x2a0202, MAXP), artificial: decalMesh(poolTex, 0xd8d4c4, MAXP, true) },
+        pools: { human: decalMesh(poolTex, 0x2a0202, MAXP), artificial: (() => { const m = decalMesh(milkTex, 0x30363e, MAXP, true); m.material.emissive.setHex(0xaeb8c8); m.material.emissiveMap = milkTex; m.material.emissiveIntensity = 0.5; m.material.roughness = 0.35; m.material.alphaTest = 0.3; return m; })() },
       };
       for (const k in level.fx.decals) S.add(level.fx.decals[k]); for (const k in level.fx.pools) S.add(level.fx.pools[k]);
       // spray particles
@@ -144,7 +154,7 @@
     putDecal(decals[kind], down ? down.point : V3(point.x + dir.x * 0.4, 0, point.z + dir.z * 0.4), V3(0, 1, 0), 0.25 + Math.random() * 0.2);
     if (bodyMesh) wound(bodyMesh, point, kind);
   }
-  const woundGeo = new T.CircleGeometry(0.035, 8), woundMats = { human: new T.MeshLambertMaterial({ color: 0x3a0202 }), artificial: new T.MeshLambertMaterial({ color: 0xd8d4c4, emissive: 0x2a2a26 }) };
+  const woundGeo = new T.CircleGeometry(0.011, 12), woundMats = { human: new T.MeshLambertMaterial({ color: 0x4a0606 }), artificial: new T.MeshBasicMaterial({ color: 0x5e5c58 }) };
   function wound(mesh, worldPoint, kind) {
     if ((mesh.userData.wounds || 0) >= 4) return; mesh.userData.wounds = (mesh.userData.wounds || 0) + 1;
     const w = new T.Mesh(woundGeo, woundMats[kind]); const lp = mesh.worldToLocal(worldPoint.clone());
@@ -159,12 +169,12 @@
       sp.life[i] = 0.25 + Math.random() * 0.3; const v = k < 2 ? [1, 0.8, 0.4] : [0.5, 0.48, 0.45]; sp.col[i * 3] = v[0]; sp.col[i * 3 + 1] = v[1]; sp.col[i * 3 + 2] = v[2]; }
     sp.pts.geometry.attributes.color.needsUpdate = true;
   }
-  function pool(p, kind) { kind = kind === 'artificial' ? 'artificial' : 'human'; putDecal(pools[kind], V3(p.x, 0.003, p.z), V3(0, 1, 0), 1.2 + Math.random() * 0.5, true); }
+  function pool(p, kind) { kind = kind === 'artificial' ? 'artificial' : 'human'; putDecal(pools[kind], V3(p.x, 0.003, p.z), V3(0, 1, 0), (kind === 'artificial' ? 2.3 : 1.2) + Math.random() * 0.4, true); }
   function tracer(a, b) {
     if (!tracers.length) return; const tr = tracers.find(t => t.t <= 0) || tracers[0];
     const p = tr.l.geometry.attributes.position; p.setXYZ(0, a.x, a.y, a.z); p.setXYZ(1, b.x, b.y, b.z); p.needsUpdate = true; tr.t = 0.08; tr.l.material.opacity = 0.9;
   }
-  function muzzle(p, power = 1) { if (!flashLight) return; flashLight.position.copy(p); flashLight.intensity = 12 * power; flashT = 0.06; }
+  function muzzle(p, power = 1) { if (!flashLight) return; flashLight.position.copy(p); flashLight.intensity = 4 * power; flashT = 0.06; }
   let flashT = 0;
   function update(dt, rdt) {
     U.time.value += rdt * (0.4 + 0.6 * (NR.core ? NR.core.timeScale : 1));
@@ -183,5 +193,5 @@
     if (flashT > 0) { flashT -= rdt; if (flashT <= 0) flashLight.intensity = 0; }
   }
 
-  NR.fx = { U, revolverModel, useRevolverAsset, hatModel, smoke, rain, attach, blood, impact, pool, tracer, muzzle, update, BLOOD, canvasTex };
+  NR.fx = { milkTex, U, revolverModel, useRevolverAsset, hatModel, smoke, rain, attach, blood, impact, pool, tracer, muzzle, update, BLOOD, canvasTex };
 })();

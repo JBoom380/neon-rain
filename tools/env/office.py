@@ -370,7 +370,7 @@ if '--bake' in ARGS:
         bake([o], [im], 'atlas', 'COMBINED')
     # one exposure for everything baked (lightmap is irradiance, the atlases already include albedo)
     lm_mult, lm_img = save_ldr(lm, WORK / 'office_lm.jpg', pct=99.8)
-    at_mult, at_img = save_ldr(at, WORK / 'office_atlas.jpg', pct=99.6)
+    at_mult, at_img = save_ldr(at, WORK / 'office_atlas.jpg', pct=97.5, quality=97)
     for k, (o, size, _) in DYN.items():
         m, im = save_ldr(dimgs[k], WORK / f'office_{k}.jpg', scale=1 / at_mult)
         single_material(o, export_mat_baked('BAKED_' + k, im, 'atlas', at_mult)); strip_uv_except(o, ['atlas'])

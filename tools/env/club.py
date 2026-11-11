@@ -333,7 +333,7 @@ if '--bake' in ARGS:
     bake([shell], [lm], 'lm', 'DIFFUSE')
     bake([props], [at], 'atlas', 'COMBINED')
     lm_mult, lm_img = save_ldr(lm, WORK / 'club_lm.jpg', pct=99.5, smooth=2)
-    at_mult, at_img = save_ldr(at, WORK / 'club_atlas.jpg', pct=99.3)
+    at_mult, at_img = save_ldr(at, WORK / 'club_atlas.jpg', pct=97.5, quality=97)
     for slot in shell.material_slots:
         slot.material = export_mat_lightmapped(slot.material, lm_img, lm_mult)
     strip_uv_except(shell, ['UVMap', 'lm'])

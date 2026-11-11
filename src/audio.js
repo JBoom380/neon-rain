@@ -145,13 +145,33 @@
     return new Promise(res => { const iv = setInterval(() => { rainMeter.getFloatTimeDomainData(buf); for (const v of buf) rs += v * v; musicMeter.getFloatTimeDomainData(buf); for (const v of buf) ms += v * v; n += 2048; }, 50);
       setTimeout(() => { clearInterval(iv); const db = x => +(10 * Math.log10(x / n + 1e-12)).toFixed(1); res({ rain: db(rs), music: db(ms), gap: +(db(ms) - db(rs)).toFixed(1) }); }, secs * 1000); });
   }
+  // ---------------------------------------------------------------- voices: one generated take per spoken line (assets/voice), keyed by the line text
+  let voiceBus = null, vman = null, vcur = null; const vbufs = {};
+  const vkey = t => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const VOICE_GAIN = 1.7; // takes sit at -20 dBFS RMS; a limiter after the gain keeps the peaks under full scale
+  function voiceBusNode() { if (!voiceBus) { voiceBus = ctx.createGain(); voiceBus.gain.value = (S().voice != null ? S().voice : 1) * VOICE_GAIN; const lim = ctx.createDynamicsCompressor(); lim.threshold.value = -6; lim.knee.value = 4; lim.ratio.value = 12; lim.attack.value = 0.002; lim.release.value = 0.12; voiceBus.connect(lim); lim.connect(master); } return voiceBus; }
+  function loadVoices() { if (!vman) vman = fetch(NR.ASSET + 'voice/voice.json').then(r => r.json()).catch(() => ({})); return vman; }
+  function vload(f) { if (!vbufs[f]) { vbufs[f] = fetch(NR.ASSET + 'voice/' + f + '.mp3').then(r => { if (!r.ok) throw new Error('voice ' + f); return r.arrayBuffer(); }).then(b => new Promise((res, rej) => ctx.decodeAudioData(b, res, rej))); vbufs[f].catch(() => { delete vbufs[f]; }); } return vbufs[f]; }
+  function preVoice(prefix) { if (!unlocked || !ensure()) return; loadVoices().then(m => { for (const k in m) if (m[k].f.indexOf(prefix) === 0) vload(m[k].f).catch(() => {}); }); }
+  function stopVoice() { const h = vcur; if (!h) return; vcur = null; try { h.g.gain.setTargetAtTime(0, ctx.currentTime, 0.03); h.src.stop(ctx.currentTime + 0.15); } catch (e) {} }
+  // speak a story line; resolves to { dur, done } when the take starts, or null when there is no take (text only)
+  async function speak(text) {
+    if (!unlocked || !ensure()) return null; const m = await loadVoices(), e = m[vkey(text)]; if (!e) return null;
+    let buf; try { buf = await Promise.race([vload(e.f), new Promise((_, rej) => setTimeout(rej, 2500))]); } catch (x) { return null; }
+    stopVoice(); const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = buf; src.connect(g); g.connect(voiceBusNode()); src.start();
+    const h = { dur: buf.duration, src, g, f: e.f }; h.done = new Promise(r => { src.onended = () => { if (vcur === h) vcur = null; r(); }; }); vcur = h; NR.bus.emit('voice', { f: e.f, dur: buf.duration }); return h;
+  }
+  // dev meter: RMS (dBFS) of the voice bus and the music bus over `secs` seconds, counted only while a take plays
+  function mixMeter(secs = 6) { if (!ensure()) return Promise.resolve(null); const va = ctx.createAnalyser(), ma = ctx.createAnalyser(); va.fftSize = ma.fftSize = 2048; voiceBusNode().connect(va); musicBusNode().connect(ma);
+    const buf = new Float32Array(2048); let vs = 0, ms = 0, n = 0; return new Promise(res => { const iv = setInterval(() => { if (!vcur) return; va.getFloatTimeDomainData(buf); for (const v of buf) vs += v * v; ma.getFloatTimeDomainData(buf); for (const v of buf) ms += v * v; n += 2048; }, 50);
+      setTimeout(() => { clearInterval(iv); try { voiceBus.disconnect(va); musicBus.disconnect(ma); } catch (e) {} const db = x => +(10 * Math.log10(x / Math.max(1, n) + 1e-12)).toFixed(1); res({ voice: db(vs), music: db(ms), gap: +(db(vs) - db(ms)).toFixed(1), n }); }, secs * 1000); }); }
   function rainBed(on) { if (!on) ambience([]); }
   function playMusic(id) { return cue(id); }
   function unlock() {
     unlocked = true; ensure(); if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
     const c = current(); if (c && c.src) { const p = c.play(); if (p && p.catch) p.catch(() => {}); }
   }
-  function setVolumes() { rainLevel(); if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; }
+  function setVolumes() { rainLevel(); if (sfxBus) sfxBus.gain.value = S().sfx; if (musicBus) musicBus.gain.value = S().music * duckV; if (voiceBus) voiceBus.gain.value = (S().voice != null ? S().voice : 1) * VOICE_GAIN; }
   function init() {
     const B = NR.bus;
     B.on('shot', () => { fx.shot(); fx.brass(); }); B.on('dryFire', () => fx.dry());
@@ -160,5 +180,5 @@
     B.on('enemyShot', d => { const P = NR.player; fx.enemyShot(P ? d.pos.distanceTo(P.pos) : 10); });
     B.on('smoke', () => { fx.lighter(); setTimeout(fx.inhale, 400); }); B.on('focus', () => fx.focus()); B.on('clue', () => fx.clue());
   }
-  NR.audio = { meter, init, fx, unlock, playMusic, cue, duck, rainBed, ambience, setVolumes, loadTracks, current, setOnEnded, trackOf, get tracks() { return tracks; }, get cueId() { return cueId; }, get deckGains() { return decks.map(d => d.gain ? +d.gain.gain.value.toFixed(3) : null); }, get unlocked() { return unlocked; } };
+  NR.audio = { mixMeter, speak, stopVoice, preVoice, get voiceOn() { return !!vcur; }, get voiceBus() { return voiceBus; }, meter, init, fx, unlock, playMusic, cue, duck, rainBed, ambience, setVolumes, loadTracks, current, setOnEnded, trackOf, get tracks() { return tracks; }, get cueId() { return cueId; }, get deckGains() { return decks.map(d => d.gain ? +d.gain.gain.value.toFixed(3) : null); }, get unlocked() { return unlocked; } };
 })();

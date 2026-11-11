@@ -6,8 +6,8 @@ import numpy as np, cv2
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REF = os.path.normpath(os.path.join(HERE, '..', '..', 'art', 'vela_favorites', 'FAV1_blonde_seed52.png'))
-det = cv2.FaceDetectorYN.create(os.path.join(HERE, 'models', 'yunet.onnx'), '', (320, 320), 0.6, 0.3, 5000)
-rec = cv2.FaceRecognizerSF.create(os.path.join(HERE, 'models', 'sface.onnx'), '')
+det = cv2.FaceDetectorYN.create(os.path.join(HERE, '..', '..', 'art', 'motion', 'vela_full_v2', 'models', 'yunet.onnx'), '', (320, 320), 0.6, 0.3, 5000)
+rec = cv2.FaceRecognizerSF.create(os.path.join(HERE, '..', '..', 'art', 'motion', 'vela_full_v2', 'models', 'sface.onnx'), '')
 
 
 def embed(bgr):

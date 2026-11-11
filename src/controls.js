@@ -13,7 +13,7 @@
     L.fx = L.sx + Math.round(14 * k); L.fy = L.sy - L.R - Math.round(30 * k) - L.fr;
     L.bx = w - Math.round(18 * k) - L.rr; L.ry = h - Math.round(30 * k) - sb - L.rr;
     L.smy = L.ry - Math.round(74 * k); L.scy = L.smy - Math.round(74 * k); L.iy = L.scy - Math.round(70 * k) - L.ir;
-    L.ix = w - Math.round(18 * k) - L.ir; L.gx = L.bx - Math.round(74 * k); L.gy = L.ry; // GUN: left of RELOAD
+    L.ix = w - Math.round(18 * k) - L.ir; L.gx = L.fx; L.gy = L.fy - L.fr - Math.round(16 * k) - L.rr; // GUN: above FIRE (the pistol arm comes up through the old place, left of RELOAD)
     if (!root) return;
     place(el.fire, L.fx, L.fy, L.fr); place(el.reload, L.bx, L.ry, L.rr); place(el.smoke, L.bx, L.smy, L.rr); place(el.scan, L.bx, L.scy, L.rr); place(el.interact, L.ix, L.iy, L.ir); place(el.gun, L.gx, L.gy, L.rr);
     el.base.style.width = el.base.style.height = L.R * 2 + 'px'; el.knob.style.width = el.knob.style.height = Math.round(52 * k) + 'px';

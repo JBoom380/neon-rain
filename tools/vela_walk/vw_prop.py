@@ -19,6 +19,8 @@ def main(gd, cd, od, loop, key):
     Gy = [cv2.cvtColor(g, cv2.COLOR_RGB2GRAY) for g in Gc]
     C = [rgba(os.path.join(cd, 'cut_%02d.png' % i)) for i in range(n)]
     dis = cv2.DISOpticalFlow_create(cv2.DISOPTICAL_FLOW_PRESET_MEDIUM)
+    kj = os.path.join(cd, 'key.json')
+    if key < 0 and os.path.exists(kj): key = __import__('json').load(open(kj))['key']  # the Klein identity key
     if key < 0:  # auto: the most typical first-pass frame (closest to the per-pixel median of the sequence)
         med = np.median(np.stack([c[..., :3] for c in C]), axis=0)
         key = int(np.argmin([np.abs(c[..., :3] - med).mean() for c in C]))

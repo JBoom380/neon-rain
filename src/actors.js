@@ -11,6 +11,20 @@
   function loadTex(url) { if (!texCache[url]) { const t = loader.load(url, undefined, undefined, () => console.warn('missing sprite', url)); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4; texCache[url] = t; } return texCache[url]; }
   function preload(who) { const set = { angle: {}, idle: [] }; for (const a of new Set(ANG)) set.angle[a] = loadTex(NR.SPRITE(who, a)); for (let i = 0; i < 12; i++) set.idle.push(loadTex(NR.SPRITE(who, 'idle_' + String(i).padStart(2, '0')))); return set; }
   const blackTex = new T.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1); blackTex.needsUpdate = true;
+  // enemy rigs: the cast rim (cyan) and the alley's cool key turn lit white cloth into saturated green under the grade.
+  // Enemies get a calmed copy of each material: a dimmer rim and no chroma on the lit highlights (shadows stay cool).
+  const calmMats = new Map();
+  function calmMat(m) {
+    if (calmMats.has(m)) return calmMats.get(m);
+    const c = m.clone(), orig = m.onBeforeCompile;
+    c.onBeforeCompile = (sh, rend) => {
+      if (orig) orig(sh, rend);
+      if (sh.uniforms.uRimA) sh.uniforms.uRimA.value = new T.Color(0x38d6ff).multiplyScalar(0.08);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'float calmL = dot(outgoingLight, vec3(0.299, 0.587, 0.114)); outgoingLight = mix(outgoingLight, vec3(calmL) * vec3(1.04, 0.99, 0.94), 0.85 * smoothstep(0.06, 0.3, calmL));\n#include <opaque_fragment>');
+    };
+    c.customProgramCacheKey = () => 'nrEnemyCalm1';
+    c.userData.calm = true; calmMats.set(m, c); return c;
+  }
   function paintedMat(level) {
     const sl = level.sideLight || { ambient: 0x606878, key: 0xffffff, warm: 0 };
     const sh = level.shaft;
@@ -19,9 +33,9 @@
       uniforms: { map: { value: null }, rect: { value: new T.Vector4(0, 0, 1, 1) }, flip: { value: 0 }, walkPh: { value: 0 }, walk: { value: 0 }, side: { value: 0 }, cookie: { value: sh ? sh.cookie : blackTex }, lightVP: { value: sh ? sh.lightVP : new T.Matrix4() },
         ambient: { value: new T.Color(sl.ambient) }, key: { value: new T.Color(sl.key) }, warm: { value: new T.Color(sl.warm) }, keyGain: { value: sh ? 1.0 : 0.0 },
         fogC: { value: level.scene.fog.color }, fogD: { value: level.scene.fog.density }, hit: { value: 0 },
-        rimGain: { value: 0 }, rimSide: { value: 1 }, rimCol: { value: new T.Color(0xf0dcc4) } },
+        rimGain: { value: 0 }, rimSide: { value: 1 }, rimCol: { value: new T.Color(0xf0dcc4) }, filmed: { value: 0 } },
       vertexShader: 'uniform float flip; uniform vec4 rect; varying vec2 vUv, vL; varying vec3 vW; varying float vDepth; void main(){ vL=vec2(flip>0.5?1.-uv.x:uv.x, uv.y); vUv=rect.xy+vL*rect.zw; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vDepth=-mv.z; gl_Position=projectionMatrix*mv; }',
-      fragmentShader: `uniform vec4 rect; uniform float rimGain, rimSide; uniform vec3 rimCol; uniform sampler2D map, cookie; uniform mat4 lightVP; uniform vec3 ambient, key, warm, fogC; uniform float keyGain, fogD, hit, walk, walkPh, side; varying vec2 vUv, vL; varying vec3 vW; varying float vDepth;
+      fragmentShader: `uniform vec4 rect; uniform float rimGain, rimSide, filmed; uniform vec3 rimCol; uniform sampler2D map, cookie; uniform mat4 lightVP; uniform vec3 ambient, key, warm, fogC; uniform float keyGain, fogD, hit, walk, walkPh, side; varying vec2 vUv, vL; varying vec3 vW; varying float vDepth;
         void main(){ vec2 uv = vUv;
           // two-pose walk: below the hem, the leg on one half lifts and swings while the other plants, then they swap
           if (walk > 0.0 && uv.y < 0.34) { float k = 1.0 - uv.y / 0.34; float s = sin(walkPh); float leg = uv.x < 0.5 ? 1.0 : -1.0;
@@ -30,7 +44,7 @@
           vec4 t=texture2D(map,uv); if(t.a<0.5) discard;
           // 1-2 px matte erosion: the light anti-aliased edge of the sprite (its old background) never reaches the screen
           vec2 e = max(abs(dFdx(uv)), abs(dFdy(uv))) * 1.5; float ea = min(min(texture2D(map, uv + vec2(e.x, 0.)).a, texture2D(map, uv - vec2(e.x, 0.)).a), min(texture2D(map, uv + vec2(0., e.y)).a, texture2D(map, uv - vec2(0., e.y)).a));
-          if (ea < 0.5) discard; t.rgb *= mix(0.75, 1.0, smoothstep(0.5, 0.95, ea)); vec3 c=t.rgb*t.rgb; // ~linear
+          if (ea < 0.5) discard; t.rgb *= mix(0.75, 1.0, smoothstep(0.5, 0.95, ea)); vec3 c = filmed > 0.5 ? pow(t.rgb, vec3(2.2)) * 0.62 : t.rgb*t.rgb; // ~linear; filmed: the video billboard's decode, so the walker and the filmed clips match
           vec4 lp=lightVP*vec4(vW,1.); vec2 luv=lp.xy/lp.w*0.5+0.5; float ck=0.; if(keyGain>0. && lp.w>0. && luv.x>0. && luv.x<1. && luv.y>0. && luv.y<1.) ck=smoothstep(0.3,0.8,texture2D(cookie,luv).r);
           float side=smoothstep(0.1,0.9,vL.x);
           vec3 light = ambient*(1.3+0.7*side) + key*ck*keyGain*(0.4+0.6*side) + warm*(1.0-vL.y)*0.5;
@@ -41,7 +55,7 @@
           // red-keep mask for the B&W grade: painted reds (dress, lips) write alpha < 1, the post pass keeps their colour
           float rk = smoothstep(2.0, 2.8, t.r / max(0.03, max(t.g, t.b))) * smoothstep(0.16, 0.3, t.r);
           col = mix(col, col * vec3(1.25, 0.8, 0.8), rk * 0.5);
-          gl_FragColor=vec4(col, 1.0 - rk * 0.95); }`,
+          gl_FragColor=vec4(col, 0.95 - rk * 0.9); }`, // alpha < 0.975 flags the figure for the grade, lower for her reds
     });
   }
   class Painted {
@@ -100,7 +114,11 @@
       if (D.stop.angles) for (const a in D.stop.angles) this.tex.stop[a] = sheet(D.stop.angles[a].sheet); else this.tex.stop['0'] = sheet(D.stop.sheet);
       for (const a in D.walk.angles) this.tex.walk[a] = sheet(D.walk.angles[a].sheet);
       this.mat = paintedMat(level); this.mat.uniforms.map.value = this.tex.idle; cellRect(this.mat.uniforms.rect.value, D.idle, 0);
-      this.mesh = new T.Mesh(new T.PlaneGeometry(D.world[0], D.world[1]), this.mat); this.mesh.position.y = D.centerY; this.mesh.renderOrder = 1;
+      // drawn like the video billboard: in the transparent pass after the smoke and haze (renderOrder 7), so they never wash over her;
+      // colour and the red-keep alpha are written as they are (no blending), the cut-out discard keeps the edge
+      Object.assign(this.mat, { transparent: true, blending: T.CustomBlending, blendEquation: T.AddEquation, blendSrc: T.OneFactor, blendDst: T.ZeroFactor, blendSrcAlpha: T.OneFactor, blendDstAlpha: T.ZeroFactor, depthWrite: true });
+      this.mat.uniforms.filmed.value = 1;
+      this.mesh = new T.Mesh(new T.PlaneGeometry(D.world[0], D.world[1]), this.mat); this.mesh.position.y = D.centerY; this.mesh.renderOrder = 7; // after the haze slabs and cones (4, 6) and the smoke
       const cs = new T.Mesh(new T.PlaneGeometry(0.9, 0.5), new T.MeshBasicMaterial({ map: NR.world.glowTex, color: 0x000000, transparent: true, opacity: 0.75, depthWrite: false }));
       cs.material.onBeforeCompile = s => { s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', 'vec4 sc=texture2D(map,vMapUv); diffuseColor=vec4(0.,0.,0.,sc.r*opacity);'); };
       cs.rotation.x = -Math.PI / 2; cs.position.y = 0.012; cs.renderOrder = 1; this.shadow = cs;
@@ -126,6 +144,8 @@
     update(dt, cam) {
       const D = this.D, W = D.walk, S = D.stop, u = this.mat.uniforms; this.t += dt; this.walking = false;
       if (this.mode === 'walk') {
+        // seen from the front she walks on the filmed clip right onto her mark and the idle clip takes over (no painted stop clip)
+        if (this.stopAt != null && this.dist >= this.stopAt && this.perf && this.perf.walkFront) this.stopAt = null;
         if (this.stopAt != null && this.dist >= this.stopAt) { this.mode = 'stop'; this.clip = { t: 0, o: this.pos.clone(), y: this.endYaw, f: -1 }; this.yaw = this.endYaw; }
         else if (this.path && this.path.length) {
           const tgt = this.path[0], d = V3(tgt.x - this.pos.x, 0, tgt.z - this.pos.z), L = d.length();
@@ -161,7 +181,7 @@
         u.map.value = this.tex.idle; cellRect(u.rect.value, D.idle, Math.floor(this.t * D.idle.fps) % D.idle.frames);
       } else { u.map.value = this.tex.pose; cellRect(u.rect.value, D.pose, D.pose.index[ang]); }
       u.flip.value = 0; u.walk.value = 0;
-      if (this.rimSrc) { const cl = Math.hypot(cx, cz) || 1, lx = this.rimSrc.x - this.pos.x, lz = this.rimSrc.z - this.pos.z; u.rimSide.value = (lx * cz - lz * cx) / cl >= 0 ? 1 : -1; u.rimGain.value = 0.55; }
+      if (this.rimSrc) { const cl = Math.hypot(cx, cz) || 1, lx = this.rimSrc.x - this.pos.x, lz = this.rimSrc.z - this.pos.z; u.rimSide.value = (lx * cz - lz * cx) / cl >= 0 ? 1 : -1; u.rimGain.value = this.silh ? this.silh.rim : 0.55; }
       this.group.visible = this.visible;
     }
     remove() { if (this.group.parent) this.group.parent.remove(this.group); }
@@ -287,12 +307,13 @@
       const r = new NR.cast.Rig(tpl, this.variant); this.cr = r;
       for (const m of [this.legs, this.upper]) this.group.remove(m);
       this.group.add(r.root);
+      r.root.traverse(o => { if (o.isMesh && o.material && !Array.isArray(o.material) && !o.material.userData.calm) o.material = calmMat(o.material); });
       if (this.glint && this.glint.parent) this.glint.parent.remove(this.glint);
       this.glint = NR.world.glow(0xfff6e0, 0.32, 0, 0, 0, r.muzzle || r.bones.handR); this.glint.visible = false; this.glint.material.depthTest = true;
       if (this.type === 'thug' && r.lampTip) {
         let cone = null; this.upper.traverse(c => { if (c.isMesh && c.geometry.type === 'ConeGeometry') cone = c; });
         if (cone) { cone.parent.remove(cone); this.group.add(cone); cone.rotation.set(0, 0, 0); this.cone = cone; }
-        NR.world.glow(0xfff0c0, 0.5, 0, 0, 0, r.lampTip);
+        this.lampGlow = NR.world.glow(0xfff0c0, 0.5, 0, 0, 0, r.lampTip);
       }
       if (this.dead) { r.full(this.deathClip || 'die_back', 0); r.update(5); }
     }
@@ -330,13 +351,13 @@
     legSide(p) { const r = V3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); return -((p.x - this.pos.x) * r.x + (p.z - this.pos.z) * r.z); }
     alert() { if (this.dead) return; if (this.state === 'dormant' || this.state === 'idle') { this.state = this.entry ? 'enter' : (this.type === 'thug' ? 'rush' : 'engage'); this.t = 0; } }
     die(dir, head) {
-      this.dead = true; this.state = 'dead'; this.deadT = 0; if (this.cover) { this.cover.taken = null; this.cover = null; }
+      this.dead = true; this.state = 'dead'; this.deadT = 0; if (this.mark) this.mark.visible = false; if (this.cover) { this.cover.taken = null; this.cover = null; }
       this.fallAxis = V3(dir.z, 0, -dir.x).normalize(); this.fallFrom = this.group.quaternion.clone();
       const fwd = Math.sin(this.yaw) * dir.x + Math.cos(this.yaw) * dir.z; // > 0: shot from behind
       // which fall: from a crouch he folds where he is; shot from behind he pitches forward; from the front he goes back,
       // buckles to his knees or slips. The fall must have room: rotate it away from tables and walls when it does not.
       const r_ = Math.random();
-      this.deathClip = this.crouch > 0.5 ? 'die_crouch' : fwd > 0.3 ? 'die_fwd' : (head && r_ < 0.4) || r_ < 0.2 ? 'die_slip' : r_ < 0.55 ? 'die_kneel' : 'die_back';
+      this.deathClip = this.kind === 'artificial' ? 'die_back' : this.crouch > 0.5 ? 'die_crouch' : fwd > 0.3 ? 'die_fwd' : (head && r_ < 0.4) || r_ < 0.2 ? 'die_slip' : r_ < 0.55 ? 'die_kneel' : 'die_back';
       if (this.cr && !this.cr.has(this.deathClip)) this.deathClip = fwd > 0.3 ? 'die_fwd' : 'die_back';
       const back = this.deathClip === 'die_back' || this.deathClip === 'die_slip';
       const L_ = this.level, reach = this.deathClip === 'die_crouch' ? 1.4 : 1.9, room = (yaw) => { const d = V3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(back ? -1 : 1); return [0.25, 0.6, 0.85].every(h => !L_.ray(V3(this.pos.x, h, this.pos.z), d, reach)) && !L_.blockedAt(this.pos.x + d.x * reach * 0.7, this.pos.z + d.z * reach * 0.7, 0.3); };
@@ -349,7 +370,15 @@
       const L = this.level; this.t += dt;
       if (this.dead && this.cr) {
         this.deadT += dt; this.cr.update(dt);
-        if (!this.pooled && this.deadT > 1.1) { this.pooled = true; const h = this.cr.bones.hips.getWorldPosition(V3(0, 0, 0)); NR.fx.pool(V3(h.x, 0, h.z), this.kind); }
+        if (this.kind === 'artificial' && this.deadT > 0.45) { // a limp fall: arms low at his sides, one across the body, the head turned, the knees uneven (after the clip, every frame)
+          const r = this.cr, N = r.nodes, w = Math.min(1, (this.deadT - 0.45) / 0.7), ws = w * w * (3 - 2 * w), P3 = b => b.getWorldPosition(V3(0, 0, 0));
+          const hd = P3(r.bones.head), hp = P3(r.bones.hips), dn = V3(hp.x - hd.x, 0, hp.z - hd.z).normalize(), sd = V3(-dn.z, 0, dn.x);
+          const aim = (bone, child, to) => { const from = P3(child).sub(P3(bone)); const t = from.clone().normalize().lerp(to.normalize(), ws); r.rotateTo(bone, from, t); };
+          const sL = Math.sign(P3(N.upper_arm_L).sub(hp).dot(sd)) || 1;
+          aim(N.upper_arm_L, N.forearm_L, V3(dn.x * 0.8 + sd.x * 0.6 * sL, -0.12, dn.z * 0.8 + sd.z * 0.6 * sL)); aim(N.forearm_L, N.hand_L, V3(dn.x * 0.95 + sd.x * 0.3 * sL, -0.05, dn.z * 0.95 + sd.z * 0.3 * sL));
+          aim(N.upper_arm_R, N.forearm_R, V3(dn.x * 0.75 - sd.x * 0.65 * sL, -0.1, dn.z * 0.75 - sd.z * 0.65 * sL)); aim(N.forearm_R, N.hand_R, V3(dn.x * 0.25 + sd.x * 0.95 * sL, 0.25, dn.z * 0.25 + sd.z * 0.95 * sL));
+          r.bend(r.bones.head, dn, 0.55 * ws * sL); aim(N.thigh_R, N.shin_R, V3(dn.x * 0.9 - sd.x * 0.42 * sL, 0.12, dn.z * 0.9 - sd.z * 0.42 * sL)); aim(N.shin_R, N.foot_R, V3(dn.x * 0.8 + sd.x * 0.55 * sL, -0.2, dn.z * 0.8 + sd.z * 0.55 * sL)); }
+        if (!this.pooled && this.deadT > 1.1) { this.pooled = true; const h = this.cr.bones.hips.getWorldPosition(V3(0, 0, 0)); if (this.kind === 'artificial') { const c = this.cr.bones.spine2.getWorldPosition(V3(0, 0, 0)), hd = this.cr.bones.head.getWorldPosition(V3(0, 0, 0)), sx = -(hd.z - h.z), sz = hd.x - h.x, sl = Math.hypot(sx, sz) || 1; h.set(c.x + sx / sl * 0.42, 0, c.z + sz / sl * 0.42); } NR.fx.pool(V3(h.x, 0, h.z), this.kind); }
         return;
       }
       if (this.dead) {
@@ -373,11 +402,11 @@
         else { this.entry = null; this.state = this.type === 'thug' ? 'rush' : 'engage'; }
       }
       else if (this.state === 'rush') {
-        if (this.recover > 0) { this.recover -= dt; moveTo = V3(this.pos.x - toP.x, 0, this.pos.z - toP.z); } else { moveTo = P.pos; if (dist < 1.35) { this.state = 'melee'; this.atkT = 0.8; } }
+        if (this.recover > 0) { this.recover -= dt; moveTo = V3(this.pos.x - toP.x, 0, this.pos.z - toP.z); } else { moveTo = P.pos; if (dist < 2.0) { this.state = 'melee'; this.atkT = 0.8; } }
       }
       else if (this.state === 'melee') {
         this.atkT -= dt; aiming = true;
-        if (this.atkT <= 0) { if (dist < 1.7 && this.flinch <= 0) NR.bus.emit('playerHit', { dmg: this.dmg, from: this.pos.clone(), melee: true }); this.state = 'rush'; this.atkT = 0; this.t = 0; this.recover = 0.6; }
+        if (this.atkT <= 0) { if (dist < 2.3 && this.flinch <= 0) NR.bus.emit('playerHit', { dmg: this.dmg, from: this.pos.clone(), melee: true }); this.state = 'rush'; this.atkT = 0; this.t = 0; this.recover = 0.6; }
         if (dist > 2.2) this.state = 'rush';
       }
       else if (this.state === 'engage') {
@@ -413,6 +442,9 @@
       }
       if (this.seenT > 0) this.seenT -= dt;
       this.glint.visible = glint && Math.sin(this.t * 60) > -0.3;
+      // a small red marker over the head of each live enemy the player can see: in the dark club the target must read at once (depth-tested: no marker through walls)
+      if (!this.mark && this.group.parent) { this.mark = NR.world.glow(0xff2a1a, 0.11, 0, 0, 0, this.group.parent, 0.9); this.mark.material.depthTest = true; }
+      if (this.mark) { const hc = this.headC; this.mark.visible = this.state !== 'dormant' && !this.dead; this.mark.position.set(hc.x, hc.y + 0.3, hc.z); this.mark.scale.setScalar(0.1 + 0.02 * Math.sin(this.t * 6)); }
       if (this.flanking && this.state !== 'move') { this.flanking = false; Enemy.flankers = Math.max(0, Enemy.flankers - 1); }
 
       // movement with obstacle slide
@@ -422,6 +454,9 @@
         L.collide(this.pos, 0.3, 0, false);
         for (const o of Enemy.all) if (o !== this && !o.dead) { const dx = this.pos.x - o.pos.x, dz = this.pos.z - o.pos.z, dd = Math.hypot(dx, dz); if (dd < 0.6 && dd > 1e-4) { this.pos.x += dx / dd * (0.6 - dd) * 0.5; this.pos.z += dz / dd * (0.6 - dd) * 0.5; } }
       }
+      // no body nearer than 1.75 m to the player: a walker into him is pushed back out to that distance
+      { const ex = this.pos.x - P.pos.x, ez = this.pos.z - P.pos.z, ed = Math.hypot(ex, ez), MIN = 1.75;
+        if (ed < MIN) { if (ed > 1e-4) { this.pos.x = P.pos.x + ex / ed * MIN; this.pos.z = P.pos.z + ez / ed * MIN; } else { this.pos.x = P.pos.x - Math.sin(this.yaw) * MIN; this.pos.z = P.pos.z - Math.cos(this.yaw) * MIN; } L.collide(this.pos, 0.3, 0, false); } }
       // pose
       let dy = wantYaw - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * Math.min(1, dt * 10);
       this.crouch += (crouchT - this.crouch) * Math.min(1, dt * 9);
@@ -468,6 +503,9 @@
       if (this.state !== 'melee') r.footLock(dt, r.layerName.L === 'run' || r.layerName.L === 'walk' || r.layerName.L === 'idle', 0, r.layerName.L === 'idle' ? 0.16 : 0.6);
       r.lod(Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) > 13);
       if (this.cone && r.lampTip) { // the flashlight beam follows the lamp in his hand
+        { // near the player the beam cone and the lamp glow fade: at 1.5 m the camera sat inside the cone and the screen filled with white
+          const nd = Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z), nk = Math.min(1, Math.max(0, (nd - 2.2) / 2.5));
+          this.cone.material.opacity = 0.07 * nk; if (this.lampGlow) { this.lampGlow.material.opacity = 0.12 + 0.88 * nk; this.lampGlow.scale.setScalar(0.18 + 0.32 * nk); } }
         const tip = r.lampTip.getWorldPosition(V3(0, 0, 0)), hand = r.bones.handL.getWorldPosition(V3(0, 0, 0));
         const d = tip.clone().sub(hand).normalize(); this.group.worldToLocal(tip);
         const dl = d.applyQuaternion(this.group.quaternion.clone().invert());
@@ -510,7 +548,7 @@
       if (hit) NR.bus.emit('playerHit', { dmg: this.dmg, from: this.pos.clone() });
       else if (!suppressAt && NR.core) NR.bus.emit('nearMiss', { from: this.pos.clone() });
     }
-    remove() { this.removed = true; if (this.group.parent) this.group.parent.remove(this.group); if (this.cover) this.cover.taken = null; }
+    remove() { this.removed = true; if (this.mark && this.mark.parent) this.mark.parent.remove(this.mark); if (this.group.parent) this.group.parent.remove(this.group); if (this.cover) this.cover.taken = null; }
   }
   Enemy.all = []; Enemy.flankers = 0; Enemy.galeN = 0;
   function spawn(level, o) { const e = new Enemy(level, o); Enemy.all.push(e); return e; }
@@ -521,7 +559,7 @@
     const show = (tpl) => {
       if (!g.parent || !tpl) return;
       // he lies under the alley's work light: a darker, rougher wet coat so the spot does not blow him out to yellow
-      if (!tpl.milesTuned) { tpl.milesTuned = true; for (const m of tpl.mats) m.color.setRGB(0.34, 0.33, 0.35); }
+      if (!tpl.milesTuned) { tpl.milesTuned = true; for (const m of tpl.mats) m.color.setRGB(0.085, 0.085, 0.10); }
       const r = new NR.cast.Rig(tpl, 'miles'); r.full('dead_pose', 0, true); r.update(2); r.lod(false);
       g.add(r.root); g.rotation.y = yaw; g.position.copy(pos); g.updateMatrixWorld(true);
       const h = r.bones.hips.getWorldPosition(V3(0, 0, 0)); g.position.x += pos.x - h.x; g.position.z += pos.z - h.z; g.updateMatrixWorld(true);
@@ -531,6 +569,7 @@
         const bb = new T.Box3().setFromObject(r.hat), c = bb.getCenter(V3(0, 0, 0)); r.hat.position.set(-c.x, -bb.min.y, -c.z);
         hat.position.set(hp.x + 0.35 * Math.cos(yaw), 0.0, hp.z - 0.35 * Math.sin(yaw)); hat.rotation.set(0, yaw + 0.7, 0.08); level.scene.add(hat); g.userData.hat = hat;
       }
+      { const hp2 = r.bones.head.getWorldPosition(V3(0, 0, 0)), rim = new T.PointLight(0xc4d4e8, 3.2, 4.5, 1.6); rim.position.set(hp2.x + 0.5, 1.3, hp2.z - 0.9); level.scene.add(rim); } // a cold rim from the street end: the set is baked, so it lights only him and the hat, and parts him from the sodium floor
       g.userData.rig = r; if (fb.group.parent) fb.group.parent.remove(fb.group);
     };
     const t = NR.cast && NR.cast.ready('miles');
