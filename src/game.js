@@ -301,6 +301,7 @@
   }
 
   async function run() {
+    if (NR.JUKEBOX_ONLY) { try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {} NR.neon.start(); G.beat = 'title'; await UI.title(); return; }
     await UI.gate();
     NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club); NR.neon.start();
     G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null); NR.neon.stop();

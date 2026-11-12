@@ -193,6 +193,7 @@
     const menu = E.title.querySelector('.menu');
     E.begin = h('div', 'btn red', 'BEGIN CASE', menu); E.jbBtn = h('div', 'btn', 'JUKEBOX', menu); E.setBtn = h('div', 'btn', 'SETTINGS', menu);
     onTap(E.jbBtn, () => NR.jukebox.open());
+    if (NR.JUKEBOX_ONLY) { E.begin.style.display = 'none'; E.setBtn.style.display = 'none'; }
     E.jb = h('div', 'jb', '', E.title);
     onTap(E.setBtn, () => settingsOpen(true));
     E.set = h('div', 'scr', '<div class="set"><h2>SETTINGS</h2><div class="rows"></div></div>'); E.set.style.zIndex = 30;
@@ -242,6 +243,7 @@
   function title() {
     E.title.classList.add('on');
     if (/[?&]jukebox/.test(location.search) && !NR.jukebox.isOpen) NR.jukebox.open(); // hub link opens the jukebox (John 11/2)
+    if (NR.JUKEBOX_ONLY) { if (!NR.jukebox.isOpen) NR.jukebox.open(); return new Promise(() => {}); }
     return new Promise(r => { const f = () => { E.title.classList.remove('on'); r(); }; onTap(E.begin, f); E.beginFn = f; });
   }
 
@@ -451,6 +453,7 @@
   function tap(e, fn) { e.classList.add('tap'); e.setAttribute('data-tap', '1'); e.addEventListener('pointerup', ev => { ev.preventDefault(); ev.stopPropagation(); fn(); }); }
   function render() {
     el = NR.ui.el.jb; list = visible(); el.className = 'jb on v' + V; el.innerHTML = html();
+    if (NR.JUKEBOX_ONLY) { const bk = el.querySelector('.back'); if (bk) bk.remove(); }
     el.querySelectorAll('[data-i]').forEach(r => tap(r, () => play(+r.dataset.i)));
     const acts = { play: toggle, prev, next, back: close, shuf: () => { shuffle = !shuffle; sync(); }, list: () => { dialList = !dialList; sync(); },
       rep: () => { repeat = repeat === 'all' ? 'one' : repeat === 'one' ? 'off' : 'all'; const c = A().current(); if (c) c.loop = repeat === 'one'; sync(); } };

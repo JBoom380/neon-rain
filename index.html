@@ -4,6 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#050506">
+<meta name="robots" content="noindex, nofollow">
 <title>NEON RAIN: The Glass Saint</title>
 <meta name="description" content="A first-person noir detective shooter for your phone. Rain, smoke, a client who lies, and a revolver with six shots. Case 01: The Glass Saint.">
 <meta property="og:type" content="website">
@@ -81002,6 +81003,8 @@ NR.cfg = {
   ASSIST_CONE: 0.045, ASSIST_FRICTION: 0.72,
   SETTINGS_KEY: 'neonRainFps.settings', CASE_KEY: 'neonRainFps.case',
 };
+NR.JUKEBOX_ONLY = true; /* John 11/11/26: game delisted, the page shows only the jukebox. Set false to open the game again. */
+if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && !/[?&]jbonly/.test(location.search)) NR.JUKEBOX_ONLY = false; /* local tests still reach the game; ?jbonly shows the live view */
 NR.ASSET = document.querySelector('script[src="config.js"]') ? '../assets/' : 'assets/'; // dev.html lives in src/
 NR.RAIN = { office: [['rain_05_int_window_close', 2.0]], alley: [['rain_13_ext_alley_gutter', 0.9], ['rain_10_ext_heavy_downpour', 0.6]], club: [['rain_09_int_heavy_rain_through_walls', 2.0]] }; // ambience per scene
 NR.RAIN.club.lp = 1000; NR.RAIN.office.lp = 2000; NR.RAIN.alley.lp = 2400; // muffled rain: lowpass cutoff per scene
@@ -84391,6 +84394,7 @@ NR.ANIM.vela = {"world":[1.0,2.0],"centerY":0.97,"walk":{"frames":16,"cycle":1.0
     const menu = E.title.querySelector('.menu');
     E.begin = h('div', 'btn red', 'BEGIN CASE', menu); E.jbBtn = h('div', 'btn', 'JUKEBOX', menu); E.setBtn = h('div', 'btn', 'SETTINGS', menu);
     onTap(E.jbBtn, () => NR.jukebox.open());
+    if (NR.JUKEBOX_ONLY) { E.begin.style.display = 'none'; E.setBtn.style.display = 'none'; }
     E.jb = h('div', 'jb', '', E.title);
     onTap(E.setBtn, () => settingsOpen(true));
     E.set = h('div', 'scr', '<div class="set"><h2>SETTINGS</h2><div class="rows"></div></div>'); E.set.style.zIndex = 30;
@@ -84440,6 +84444,7 @@ NR.ANIM.vela = {"world":[1.0,2.0],"centerY":0.97,"walk":{"frames":16,"cycle":1.0
   function title() {
     E.title.classList.add('on');
     if (/[?&]jukebox/.test(location.search) && !NR.jukebox.isOpen) NR.jukebox.open(); // hub link opens the jukebox (John 11/2)
+    if (NR.JUKEBOX_ONLY) { if (!NR.jukebox.isOpen) NR.jukebox.open(); return new Promise(() => {}); }
     return new Promise(r => { const f = () => { E.title.classList.remove('on'); r(); }; onTap(E.begin, f); E.beginFn = f; });
   }
 
@@ -84649,6 +84654,7 @@ NR.ANIM.vela = {"world":[1.0,2.0],"centerY":0.97,"walk":{"frames":16,"cycle":1.0
   function tap(e, fn) { e.classList.add('tap'); e.setAttribute('data-tap', '1'); e.addEventListener('pointerup', ev => { ev.preventDefault(); ev.stopPropagation(); fn(); }); }
   function render() {
     el = NR.ui.el.jb; list = visible(); el.className = 'jb on v' + V; el.innerHTML = html();
+    if (NR.JUKEBOX_ONLY) { const bk = el.querySelector('.back'); if (bk) bk.remove(); }
     el.querySelectorAll('[data-i]').forEach(r => tap(r, () => play(+r.dataset.i)));
     const acts = { play: toggle, prev, next, back: close, shuf: () => { shuffle = !shuffle; sync(); }, list: () => { dialList = !dialList; sync(); },
       rep: () => { repeat = repeat === 'all' ? 'one' : repeat === 'one' ? 'off' : 'all'; const c = A().current(); if (c) c.loop = repeat === 'one'; sync(); } };
@@ -85043,6 +85049,7 @@ NR.ANIM.vela = {"world":[1.0,2.0],"centerY":0.97,"walk":{"frames":16,"cycle":1.0
   }
 
   async function run() {
+    if (NR.JUKEBOX_ONLY) { try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {} NR.neon.start(); G.beat = 'title'; await UI.title(); return; }
     await UI.gate();
     NR.audio.cue('04'); NR.audio.ambience(NR.RAIN.club); NR.neon.start();
     G.beat = 'title'; await UI.title(); NR.audio.setOnEnded(null); NR.neon.stop();

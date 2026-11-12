@@ -9,6 +9,8 @@ NR.cfg = {
   ASSIST_CONE: 0.045, ASSIST_FRICTION: 0.72,
   SETTINGS_KEY: 'neonRainFps.settings', CASE_KEY: 'neonRainFps.case',
 };
+NR.JUKEBOX_ONLY = true; /* John 11/11/26: game delisted, the page shows only the jukebox. Set false to open the game again. */
+if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && !/[?&]jbonly/.test(location.search)) NR.JUKEBOX_ONLY = false; /* local tests still reach the game; ?jbonly shows the live view */
 NR.ASSET = document.querySelector('script[src="config.js"]') ? '../assets/' : 'assets/'; // dev.html lives in src/
 NR.RAIN = { office: [['rain_05_int_window_close', 2.0]], alley: [['rain_13_ext_alley_gutter', 0.9], ['rain_10_ext_heavy_downpour', 0.6]], club: [['rain_09_int_heavy_rain_through_walls', 2.0]] }; // ambience per scene
 NR.RAIN.club.lp = 1000; NR.RAIN.office.lp = 2000; NR.RAIN.alley.lp = 2400; // muffled rain: lowpass cutoff per scene
